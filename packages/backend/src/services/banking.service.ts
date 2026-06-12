@@ -125,7 +125,7 @@ export async function getReconciliationView(companyId: string, accountId: string
   return {
     bankAccount: account,
     statement,
-    systemEntries: systemItems.map(item => ({
+    systemEntries: systemItems.map((item: any) => ({
       id: item.id,
       date: item.journalEntry.date.toISOString(),
       voucherNo: item.journalEntry.voucherNo,
@@ -164,17 +164,17 @@ function autoMatchTransactions(
       if (!amountMatch) continue;
 
       // Check date proximity (within 3 days)
-      const sysDate = new Date(sysItem.journalEntry.date).getTime();
+      const sysDate = new Date((sysItem as any).journalEntry?.date).getTime();
       const bankDate = new Date(bankLine.date).getTime();
       const daysDiff = Math.abs(sysDate - bankDate) / (1000 * 60 * 60 * 24);
       const dateMatch = daysDiff <= 3;
 
       // Check reference match (fuzzy)
       let referenceMatch = false;
-      if (bankLine.reference && sysItem.journalEntry.narration) {
+      if (bankLine.reference && (sysItem as any).journalEntry?.narration) {
         referenceMatch = bankLine.reference.toLowerCase().includes(
-          sysItem.journalEntry.narration.toLowerCase().slice(0, 10)
-        ) || sysItem.journalEntry.narration.toLowerCase().includes(
+          (sysItem as any).journalEntry.narration.toLowerCase().slice(0, 10)
+        ) || (sysItem as any).journalEntry.narration.toLowerCase().includes(
           bankLine.reference.toLowerCase()
         );
       }
@@ -210,7 +210,7 @@ function autoMatchTransactions(
 export async function applyMatches(
   matches: Array<{ systemEntryId: string; statementLineId: string }>
 ) {
-  const results = [];
+  const results: any[] = [];
   for (const match of matches) {
     const updated = await prisma.bankStatementLine.update({
       where: { id: match.statementLineId },

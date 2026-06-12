@@ -37,7 +37,7 @@ export async function upsertBudget(companyId: string, data: {
 export async function bulkUpsertBudgets(companyId: string, items: {
   name: string; fiscalYearId: string; accountId: string; month: number; year: number; amount: number;
 }[]) {
-  const results = [];
+  const results: any[] = [];
   for (const item of items) {
     results.push(await upsertBudget(companyId, item));
   }
@@ -53,7 +53,7 @@ export async function getBudgetVsActual(companyId: string, fiscalYearId: string)
     include: { account: { select: { id: true, code: true, name: true, type: true } } },
   });
 
-  const results = [];
+  const results: any[] = [];
   for (const b of budgets) {
     const monthStart = new Date(b.year, b.month - 1, 1);
     const monthEnd = new Date(b.year, b.month, 0, 23, 59, 59);
@@ -68,16 +68,17 @@ export async function getBudgetVsActual(companyId: string, fiscalYearId: string)
 
     const totalDebit = items.reduce((s, i) => s + Number(i.debit), 0);
     const totalCredit = items.reduce((s, i) => s + Number(i.credit), 0);
-    const isDebitNormal = ['ASSET', 'EXPENSE'].includes(b.account.type);
+    const account = (b as any).account;
+    const isDebitNormal = ['ASSET', 'EXPENSE'].includes(account?.type);
     const actual = isDebitNormal ? totalDebit - totalCredit : totalCredit - totalDebit;
     const variance = b.amount - actual;
     const variancePercent = b.amount !== 0 ? (variance / b.amount) * 100 : 0;
 
     results.push({
       accountId: b.accountId,
-      accountCode: b.account.code,
-      accountName: b.account.name,
-      accountType: b.account.type,
+      accountCode: account?.code,
+      accountName: account?.name,
+      accountType: account?.type,
       month: b.month,
       year: b.year,
       budgetAmount: b.amount,
