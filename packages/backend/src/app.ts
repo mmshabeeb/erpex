@@ -130,7 +130,7 @@ for (const p of possiblePaths) {
 app.use('/erpex', express.static(frontendDistPath));
 
 // SPA Routing fallback: any request to /erpex/* that doesn't match a static file serves index.html
-app.get('/erpex/*', (req, res) => {
+app.get(/^\/erpex\/.*/, (req, res) => {
   res.sendFile(path.join(frontendDistPath, 'index.html'));
 });
 
