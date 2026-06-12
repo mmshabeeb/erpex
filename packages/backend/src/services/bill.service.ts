@@ -1,5 +1,5 @@
 // ============================================================
-// ERPEX — Bill Service
+// ERPEX — Bill Service (Localized & Scoped)
 // Accounts Payable recording with auto-JE and inventory IN
 // ============================================================
 
@@ -9,11 +9,12 @@ import { generateDocNumber } from '../utils/docNumber.js';
 import { generateVoucherNo } from '../utils/voucherNumber.js';
 import { recordInMovement } from './inventory.service.js';
 import { createAuditLog } from '../middleware/auditLogger.js';
+import { resolveGSTComponents } from './gst.service.js';
 
 const billInclude = {
-  contact: { select: { id: true, name: true, companyName: true } },
+  contact: { select: { id: true, name: true, companyName: true, stateCode: true, gstin: true } },
   lines: {
-    include: { item: { select: { id: true, name: true, sku: true, type: true, inventoryAccountId: true, purchaseAccountId: true } } },
+    include: { item: { select: { id: true, name: true, sku: true, type: true, inventoryAccountId: true, purchaseAccountId: true, hsnCode: true, sacCode: true } } },
     orderBy: { sortOrder: 'asc' as const },
   },
 };
@@ -61,19 +62,87 @@ export async function createBill(companyId: string, data: any) {
   const number = await generateDocNumber(companyId, 'BILL', 'bill');
   const { lines, discount, ...header } = data;
 
-  const lineData = lines.map((l: any, idx: number) => ({
-    ...l, amount: l.qty * l.rate + (l.taxAmount || 0), sortOrder: l.sortOrder ?? idx,
-  }));
+  const company = await prisma.company.findUnique({ where: { id: companyId } });
+  if (!company) throw new AppError('Company not found', 404);
+
+  const isIndia = company.country === 'India';
+  const companyState = company.stateCode || '07';
+
+  const contact = await prisma.contact.findUnique({ where: { id: data.contactId } });
+  const placeOfSupply = data.placeOfSupply || contact?.stateCode || companyState;
+
+  // Pre-load items to get HSN/SAC codes
+  const itemIds = lines.map((l: any) => l.itemId).filter(Boolean);
+  const items = await prisma.item.findMany({
+    where: { id: { in: itemIds }, companyId }
+  });
+  const itemMap = new Map(items.map(it => [it.id, it]));
+
+  // Pre-load tax configs to get rates
+  const taxConfigIds = lines.map((l: any) => l.taxConfigId).filter(Boolean);
+  const taxConfigs = await prisma.taxConfig.findMany({
+    where: { id: { in: taxConfigIds }, companyId }
+  });
+  const taxConfigMap = new Map(taxConfigs.map(tc => [tc.id, tc]));
+
+  const lineData = lines.map((l: any, idx: number) => {
+    const item = l.itemId ? itemMap.get(l.itemId) : null;
+    const taxConfig = l.taxConfigId ? taxConfigMap.get(l.taxConfigId) : null;
+    const taxRate = taxConfig ? taxConfig.rate : 0;
+    const lineSubtotal = l.qty * l.rate;
+
+    let cgstAmount = 0;
+    let sgstAmount = 0;
+    let igstAmount = 0;
+    let taxAmount = 0;
+
+    if (isIndia && taxRate > 0) {
+      const gstSplit = resolveGSTComponents(companyState, placeOfSupply, taxRate, lineSubtotal);
+      cgstAmount = gstSplit.cgstAmount;
+      sgstAmount = gstSplit.sgstAmount;
+      igstAmount = gstSplit.igstAmount;
+      taxAmount = cgstAmount + sgstAmount + igstAmount;
+    } else {
+      taxAmount = Number((lineSubtotal * (taxRate / 100)).toFixed(2));
+    }
+
+    const hsnSac = l.hsnSac || item?.hsnCode || item?.sacCode || null;
+
+    return {
+      ...l,
+      hsnSac,
+      taxAmount,
+      cgstAmount,
+      sgstAmount,
+      igstAmount,
+      amount: lineSubtotal + taxAmount,
+      sortOrder: l.sortOrder ?? idx,
+    };
+  });
 
   const subtotal = lineData.reduce((s: number, l: any) => s + (l.qty * l.rate), 0);
   const taxTotal = lineData.reduce((s: number, l: any) => s + (l.taxAmount || 0), 0);
-  const total = subtotal + taxTotal - (discount || 0);
+  
+  // Under Reverse Charge (RCM), tax is paid directly to government, not to vendor.
+  // Hence, vendor total payable excludes the tax amount.
+  const total = header.isReverseCharge
+    ? subtotal - (discount || 0)
+    : subtotal + taxTotal - (discount || 0);
 
   return prisma.bill.create({
     data: {
-      ...header, companyId, number, discount: discount || 0, subtotal, taxTotal, total,
-      amountPaid: 0, amountDue: total,
-      date: new Date(header.date), dueDate: new Date(header.dueDate),
+      ...header,
+      companyId,
+      number,
+      discount: discount || 0,
+      subtotal,
+      taxTotal,
+      total,
+      amountPaid: 0,
+      amountDue: total,
+      date: new Date(header.date),
+      dueDate: new Date(header.dueDate),
+      placeOfSupply,
       lines: { create: lineData },
     },
     include: billInclude,
@@ -94,7 +163,8 @@ export async function postBill(companyId: string, id: string) {
   if (bill.status !== 'DRAFT') throw new AppError('Only draft bills can be posted', 400);
 
   const apAccount = await prisma.account.findFirst({ where: { code: '21100', companyId } }); // Accounts Payable
-  const itcAccount = await prisma.account.findFirst({ where: { code: '11500', companyId } }); // GST Receivable (ITC)
+  const itcAccount = await prisma.account.findFirst({ where: { code: '11500', companyId } }); // Generic GST Receivable (ITC)
+  const gstConfig = await prisma.gSTConfig.findFirst({ where: { companyId } });
 
   if (!apAccount) throw new AppError('Accounts Payable account not found in COA', 500);
 
@@ -103,7 +173,6 @@ export async function postBill(companyId: string, id: string) {
   // Process each line — Dr Inventory or Expense account
   for (const line of bill.lines) {
     if (line.item && line.item.type === 'PRODUCT' && line.item.inventoryAccountId) {
-      // Record inventory IN movement
       await recordInMovement(companyId, {
         itemId: line.item.id, date: bill.date, qty: line.qty, unitCost: line.rate,
         reference: bill.number, sourceType: 'PURCHASE', sourceId: bill.id,
@@ -120,7 +189,6 @@ export async function postBill(companyId: string, id: string) {
         narration: `Purchase - ${line.description}`,
       });
     } else {
-      // Fallback: use a generic purchase account
       const genericPurchase = await prisma.account.findFirst({ where: { code: '51000', companyId } });
       if (genericPurchase) {
         jeItems.push({
@@ -131,8 +199,57 @@ export async function postBill(companyId: string, id: string) {
     }
   }
 
-  // Dr Input Tax Credit
-  if (bill.taxTotal > 0 && itcAccount) {
+  let totalCGST = 0;
+  let totalSGST = 0;
+  let totalIGST = 0;
+
+  for (const line of bill.lines) {
+    totalCGST += line.cgstAmount || 0;
+    totalSGST += line.sgstAmount || 0;
+    totalIGST += line.igstAmount || 0;
+  }
+
+  // 1. If Reverse Charge (RCM), book RCM liability & credit clearing accounts
+  if (bill.isReverseCharge && gstConfig && bill.taxTotal > 0) {
+    if (gstConfig.rcmCreditAccountId && gstConfig.rcmLiabilityAccountId) {
+      // Dr Input RCM Credit (Asset)
+      jeItems.push({
+        accountId: gstConfig.rcmCreditAccountId,
+        debit: bill.taxTotal, credit: 0,
+        narration: `Input RCM Credit - Bill ${bill.number}`,
+      });
+      // Cr RCM Liability Clearing (Liability)
+      jeItems.push({
+        accountId: gstConfig.rcmLiabilityAccountId,
+        debit: 0, credit: bill.taxTotal,
+        narration: `RCM Liability Clearing - Bill ${bill.number}`,
+      });
+    }
+  } 
+  // 2. Regular GST Input Tax Credits (ITC)
+  else if (gstConfig && (totalCGST > 0 || totalSGST > 0 || totalIGST > 0)) {
+    if (totalCGST > 0 && gstConfig.inputCGSTAccountId) {
+      jeItems.push({
+        accountId: gstConfig.inputCGSTAccountId,
+        debit: totalCGST, credit: 0,
+        narration: `Input CGST - Bill ${bill.number}`,
+      });
+    }
+    if (totalSGST > 0 && gstConfig.inputSGSTAccountId) {
+      jeItems.push({
+        accountId: gstConfig.inputSGSTAccountId,
+        debit: totalSGST, credit: 0,
+        narration: `Input SGST - Bill ${bill.number}`,
+      });
+    }
+    if (totalIGST > 0 && gstConfig.inputIGSTAccountId) {
+      jeItems.push({
+        accountId: gstConfig.inputIGSTAccountId,
+        debit: totalIGST, credit: 0,
+        narration: `Input IGST - Bill ${bill.number}`,
+      });
+    }
+  } else if (bill.taxTotal > 0 && itcAccount) {
     jeItems.push({
       accountId: itcAccount.id, debit: bill.taxTotal, credit: 0,
       narration: `ITC - ${bill.number}`,

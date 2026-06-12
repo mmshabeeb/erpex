@@ -45,3 +45,17 @@ taxationRoutes.get('/report', async (req, res, next) => {
     res.json({ success: true, data: report });
   } catch (err) { next(err); }
 });
+
+// GET /api/tax/gstr1 — GSTR-1 return report (India GST)
+taxationRoutes.get('/gstr1', async (req, res, next) => {
+  try {
+    const { startDate, endDate } = req.query as { startDate: string; endDate: string };
+    if (!startDate || !endDate) {
+      res.status(400).json({ success: false, message: 'startDate and endDate are required' });
+      return;
+    }
+    const { generateGSTR1Data } = await import('../services/gst.service.js');
+    const data = await generateGSTR1Data((req as any).companyId, new Date(startDate), new Date(endDate));
+    res.json({ success: true, data });
+  } catch (err) { next(err); }
+});

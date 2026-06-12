@@ -1,5 +1,5 @@
 // ============================================================
-// ERPEX — Invoice Service
+// ERPEX — Invoice Service (Localized & Scoped)
 // Commercial invoicing with auto-JE generation & inventory
 // ============================================================
 
@@ -9,11 +9,12 @@ import { generateDocNumber } from '../utils/docNumber.js';
 import { generateVoucherNo } from '../utils/voucherNumber.js';
 import { recordOutMovement } from './inventory.service.js';
 import { createAuditLog } from '../middleware/auditLogger.js';
+import { resolveGSTComponents } from './gst.service.js';
 
 const invoiceInclude = {
-  contact: { select: { id: true, name: true, email: true, companyName: true, creditTermDays: true } },
+  contact: { select: { id: true, name: true, email: true, companyName: true, creditTermDays: true, stateCode: true, gstin: true } },
   lines: {
-    include: { item: { select: { id: true, name: true, sku: true, type: true, cogsAccountId: true, inventoryAccountId: true } } },
+    include: { item: { select: { id: true, name: true, sku: true, type: true, cogsAccountId: true, inventoryAccountId: true, hsnCode: true, sacCode: true } } },
     orderBy: { sortOrder: 'asc' as const },
   },
 };
@@ -64,11 +65,63 @@ export async function createInvoice(companyId: string, data: any) {
   const number = await generateDocNumber(companyId, 'INVOICE', 'invoice');
   const { lines, discount, ...header } = data;
 
-  const lineData = lines.map((l: any, idx: number) => ({
-    ...l,
-    amount: l.qty * l.rate + (l.taxAmount || 0),
-    sortOrder: l.sortOrder ?? idx,
-  }));
+  const company = await prisma.company.findUnique({ where: { id: companyId } });
+  if (!company) throw new AppError('Company not found', 404);
+
+  const isIndia = company.country === 'India';
+  const companyState = company.stateCode || '07';
+
+  const contact = await prisma.contact.findUnique({ where: { id: data.contactId } });
+  const placeOfSupply = data.placeOfSupply || contact?.stateCode || companyState;
+
+  // Pre-load items to get HSN/SAC codes
+  const itemIds = lines.map((l: any) => l.itemId).filter(Boolean);
+  const items = await prisma.item.findMany({
+    where: { id: { in: itemIds }, companyId }
+  });
+  const itemMap = new Map(items.map(it => [it.id, it]));
+
+  // Pre-load tax configs to get rates
+  const taxConfigIds = lines.map((l: any) => l.taxConfigId).filter(Boolean);
+  const taxConfigs = await prisma.taxConfig.findMany({
+    where: { id: { in: taxConfigIds }, companyId }
+  });
+  const taxConfigMap = new Map(taxConfigs.map(tc => [tc.id, tc]));
+
+  const lineData = lines.map((l: any, idx: number) => {
+    const item = l.itemId ? itemMap.get(l.itemId) : null;
+    const taxConfig = l.taxConfigId ? taxConfigMap.get(l.taxConfigId) : null;
+    const taxRate = taxConfig ? taxConfig.rate : 0;
+    const lineSubtotal = l.qty * l.rate;
+
+    let cgstAmount = 0;
+    let sgstAmount = 0;
+    let igstAmount = 0;
+    let taxAmount = 0;
+
+    if (isIndia && taxRate > 0) {
+      const gstSplit = resolveGSTComponents(companyState, placeOfSupply, taxRate, lineSubtotal);
+      cgstAmount = gstSplit.cgstAmount;
+      sgstAmount = gstSplit.sgstAmount;
+      igstAmount = gstSplit.igstAmount;
+      taxAmount = cgstAmount + sgstAmount + igstAmount;
+    } else {
+      taxAmount = Number((lineSubtotal * (taxRate / 100)).toFixed(2));
+    }
+
+    const hsnSac = l.hsnSac || item?.hsnCode || item?.sacCode || null;
+
+    return {
+      ...l,
+      hsnSac,
+      taxAmount,
+      cgstAmount,
+      sgstAmount,
+      igstAmount,
+      amount: lineSubtotal + taxAmount,
+      sortOrder: l.sortOrder ?? idx,
+    };
+  });
 
   const subtotal = lineData.reduce((s: number, l: any) => s + (l.qty * l.rate), 0);
   const taxTotal = lineData.reduce((s: number, l: any) => s + (l.taxAmount || 0), 0);
@@ -87,6 +140,7 @@ export async function createInvoice(companyId: string, data: any) {
       amountDue: total,
       dueDate: new Date(header.dueDate),
       date: new Date(header.date),
+      placeOfSupply,
       lines: { create: lineData },
     },
     include: invoiceInclude,
@@ -99,7 +153,7 @@ export async function createInvoice(companyId: string, data: any) {
  * Post an invoice: generate journal entries and process inventory
  * Dr Accounts Receivable [total]
  *   Cr Revenue [subtotal]
- *   Cr Tax Payable [taxTotal]
+ *   Cr GST components or Tax Payable [taxTotal]
  * For PRODUCT items: Dr COGS, Cr Inventory (FIFO)
  */
 export async function postInvoice(companyId: string, id: string) {
@@ -117,8 +171,11 @@ export async function postInvoice(companyId: string, id: string) {
   const arAccount = await prisma.account.findFirst({ where: { code: '11200', companyId } });
   // Find default revenue account (41000 Sales Revenue)
   const revenueAccount = await prisma.account.findFirst({ where: { code: '41000', companyId } });
-  // Find GST output account (21300)
+  // Find generic GST output account (21300 Duties & Taxes)
   const taxAccount = await prisma.account.findFirst({ where: { code: '21300', companyId } });
+  
+  // Find company-specific GSTConfig
+  const gstConfig = await prisma.gSTConfig.findFirst({ where: { companyId } });
 
   if (!arAccount || !revenueAccount) {
     throw new AppError('Required accounts (AR, Revenue) not found in COA', 500);
@@ -129,7 +186,39 @@ export async function postInvoice(companyId: string, id: string) {
     { accountId: revenueAccount.id, debit: 0, credit: inv.subtotal, narration: `Sales - ${inv.number}` },
   ];
 
-  if (inv.taxTotal > 0 && taxAccount) {
+  let totalCGST = 0;
+  let totalSGST = 0;
+  let totalIGST = 0;
+
+  for (const line of inv.lines) {
+    totalCGST += line.cgstAmount || 0;
+    totalSGST += line.sgstAmount || 0;
+    totalIGST += line.igstAmount || 0;
+  }
+
+  if (gstConfig && (totalCGST > 0 || totalSGST > 0 || totalIGST > 0)) {
+    if (totalCGST > 0 && gstConfig.outputCGSTAccountId) {
+      jeItems.push({
+        accountId: gstConfig.outputCGSTAccountId,
+        debit: 0, credit: totalCGST,
+        narration: `Output CGST - Invoice ${inv.number}`,
+      });
+    }
+    if (totalSGST > 0 && gstConfig.outputSGSTAccountId) {
+      jeItems.push({
+        accountId: gstConfig.outputSGSTAccountId,
+        debit: 0, credit: totalSGST,
+        narration: `Output SGST - Invoice ${inv.number}`,
+      });
+    }
+    if (totalIGST > 0 && gstConfig.outputIGSTAccountId) {
+      jeItems.push({
+        accountId: gstConfig.outputIGSTAccountId,
+        debit: 0, credit: totalIGST,
+        narration: `Output IGST - Invoice ${inv.number}`,
+      });
+    }
+  } else if (inv.taxTotal > 0 && taxAccount) {
     jeItems.push({
       accountId: taxAccount.id,
       debit: 0,
