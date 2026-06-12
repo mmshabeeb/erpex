@@ -48,6 +48,11 @@ function loadEnv() {
     }
 }
 loadEnv();
+// Hostinger Shared Hosting database path fallback override
+if (fs.existsSync('/home/u127271988/domains/mizusubeauty.com')) {
+    process.env.DATABASE_URL = 'file:/home/u127271988/domains/mizusubeauty.com/db/erpex.db';
+    console.log('[ENV] Hostinger environment detected. Forced DATABASE_URL to:', process.env.DATABASE_URL);
+}
 process.env.PRISMA_QUERY_ENGINE_LIBRARY_THREAD_LIMIT = '1';
 process.env.PRISMA_QUERY_ENGINE_BINARY_THREAD_LIMIT = '1';
 try {
