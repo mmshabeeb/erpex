@@ -238,6 +238,59 @@ async function getProfile(userId: string) {
   };
 }
 
+async function impersonateCompany(companyId: string) {
+  const company = await prisma.company.findUnique({
+    where: { id: companyId, isActive: true },
+    include: { users: { where: { isActive: true }, orderBy: { role: 'asc' } } }
+  });
+  if (!company) throw new Error('Company not found or inactive');
+  
+  // Find first active user (prefer role ADMIN)
+  const user = company.users.find(u => u.role === 'ADMIN') || company.users[0];
+  if (!user) throw new Error('No active users found for this company');
+
+  // Update last login
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { lastLoginAt: new Date() },
+  });
+
+  const token = generateToken({
+    type: 'user',
+    id: user.id,
+    email: user.email,
+    companyId: user.companyId,
+    companySlug: company.slug,
+    role: user.role,
+  });
+
+  const refreshToken = generateRefreshToken();
+  await prisma.session.create({
+    data: {
+      userId: user.id,
+      refreshToken,
+      expiresAt: new Date(Date.now() + REFRESH_TOKEN_EXPIRES_DAYS * 24 * 60 * 60 * 1000),
+    },
+  });
+
+  return {
+    token,
+    refreshToken,
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: user.role,
+      type: 'user' as const,
+      company: {
+        id: company.id,
+        name: company.name,
+        slug: company.slug,
+      },
+    },
+  };
+}
+
 export const authService = {
   bootstrapSuperAdmin,
   superAdminLogin,
@@ -246,4 +299,5 @@ export const authService = {
   changeUserPassword,
   getProfile,
   verifyToken,
+  impersonateCompany,
 };

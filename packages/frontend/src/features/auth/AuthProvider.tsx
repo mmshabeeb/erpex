@@ -42,6 +42,7 @@ interface AuthContextType {
   login: (email: string, password: string, type: 'super_admin' | 'user', companySlug?: string) => Promise<any>;
   logout: () => void;
   getAuthHeaders: () => Record<string, string>;
+  impersonate: (companyId: string) => Promise<any>;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -120,6 +121,28 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return data;
   }
 
+  async function impersonate(companyId: string) {
+    const res = await fetch(`${API_BASE}/super-admin/companies/${companyId}/impersonate`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
+      },
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Impersonation failed');
+
+    // Store impersonated tokens
+    localStorage.setItem('erpx_token', data.token);
+    if (data.refreshToken) {
+      localStorage.setItem('erpx_refresh', data.refreshToken);
+    }
+    setToken(data.token);
+    setUser(data.user);
+    return data;
+  }
+
   function logout() {
     localStorage.removeItem('erpx_token');
     localStorage.removeItem('erpx_refresh');
@@ -142,6 +165,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         login,
         logout,
         getAuthHeaders,
+        impersonate,
       }}
     >
       {children}

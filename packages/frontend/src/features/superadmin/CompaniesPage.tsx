@@ -10,6 +10,7 @@ import {
   HiOutlinePlus, HiOutlineOfficeBuilding, HiOutlineSearch,
   HiOutlineCheckCircle, HiOutlineExclamationCircle,
   HiOutlineX, HiOutlineClock, HiOutlineUserGroup,
+  HiOutlineLogin,
 } from 'react-icons/hi';
 import { API_BASE as API } from '../../lib/api';
 
@@ -42,7 +43,7 @@ const INDIA_STATES_MAP: Record<string, string> = {
 const GSTIN_REGEX = /^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z]{1}[1-9A-Z]{1}Z[0-9A-Z]{1}$/;
 
 export default function CompaniesPage() {
-  const { getAuthHeaders } = useAuth();
+  const { getAuthHeaders, impersonate } = useAuth();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [companies, setCompanies] = useState<any[]>([]);
@@ -53,6 +54,20 @@ export default function CompaniesPage() {
   const [creating, setCreating] = useState(false);
   const [createdResult, setCreatedResult] = useState<any>(null);
   const [error, setError] = useState('');
+  const [impersonatingId, setImpersonatingId] = useState<string | null>(null);
+
+  async function handleImpersonate(companyId: string) {
+    if (impersonatingId) return;
+    setImpersonatingId(companyId);
+    setError('');
+    try {
+      await impersonate(companyId);
+      window.location.href = import.meta.env.BASE_URL || '/';
+    } catch (err: any) {
+      setError(err.message || 'Direct login failed');
+      setImpersonatingId(null);
+    }
+  }
 
   // Form state
   const [form, setForm] = useState({
@@ -541,6 +556,7 @@ export default function CompaniesPage() {
                   <th>Users</th>
                   <th>Status</th>
                   <th>Created</th>
+                  <th style={{ textAlign: 'right' }}>Actions</th>
                 </tr>
               </thead>
               <tbody>
@@ -570,6 +586,29 @@ export default function CompaniesPage() {
                     <td style={{ color: 'var(--color-text-secondary)', fontSize: 'var(--font-size-xs)' }}>
                       <HiOutlineClock style={{ display: 'inline', marginRight: 4 }} />
                       {new Date(c.createdAt).toLocaleDateString()}
+                    </td>
+                    <td style={{ textAlign: 'right' }} onClick={(e) => e.stopPropagation()}>
+                      <button
+                        onClick={() => handleImpersonate(c.id)}
+                        disabled={impersonatingId !== null}
+                        className="btn btn-secondary btn-sm"
+                        title="Login to Company Admin"
+                        style={{
+                          display: 'inline-flex',
+                          alignItems: 'center',
+                          gap: '4px',
+                          padding: '4px 10px',
+                          fontSize: 'var(--font-size-xs)',
+                          borderRadius: 'var(--border-radius-sm)',
+                          cursor: 'pointer',
+                          background: 'var(--color-bg-secondary)',
+                          border: '1px solid var(--color-border)',
+                          color: 'var(--color-text-primary)'
+                        }}
+                      >
+                        <HiOutlineLogin />
+                        {impersonatingId === c.id ? 'Connecting...' : 'Login'}
+                      </button>
                     </td>
                   </tr>
                 ))}

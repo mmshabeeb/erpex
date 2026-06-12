@@ -7,6 +7,7 @@ import { Router, Request, Response } from 'express';
 import { companyService } from '../services/company.service.js';
 import { subscriptionService } from '../services/subscription.service.js';
 import { userService } from '../services/user.service.js';
+import { authService } from '../services/auth.service.js';
 
 const router = Router();
 
@@ -43,6 +44,16 @@ router.get('/companies/:id', async (req: Request, res: Response) => {
     res.json(company);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
+  }
+});
+
+// POST /api/super-admin/companies/:id/impersonate
+router.post('/companies/:id/impersonate', async (req: Request, res: Response) => {
+  try {
+    const result = await authService.impersonateCompany(req.params.id as string);
+    res.json(result);
+  } catch (err: any) {
+    res.status(400).json({ error: err.message });
   }
 });
 
