@@ -3,6 +3,7 @@ import path from 'path';
 import { fileURLToPath } from 'url';
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
+const hostingerRoot = '/home/u127271988/domains/mizusubeauty.com';
 function loadEnv() {
     const possiblePaths = [
         path.join(process.cwd(), '.env'),
@@ -27,18 +28,13 @@ function loadEnv() {
                             if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
                                 val = val.slice(1, -1);
                             }
-                            // Always set the env variable from .env, showing a warning if overriding
-                            if (process.env[key] && process.env[key] !== val) {
-                                console.log(`[ENV] Overriding existing process.env.${key} (was: ${process.env[key]}) with: ${val}`);
+                            // Shell-provided values take precedence over values from .env.
+                            if (!process.env[key]) {
+                                process.env[key] = val;
                             }
-                            process.env[key] = val;
                         }
                     }
                 }
-                console.log(`[ENV] Final DATABASE_URL: ${process.env.DATABASE_URL}`);
-                // Force Prisma to use only 1 thread to prevent CloudLinux LVE thread exhaustion
-                process.env.PRISMA_QUERY_ENGINE_LIBRARY_THREAD_LIMIT = '1';
-                process.env.PRISMA_QUERY_ENGINE_BINARY_THREAD_LIMIT = '1';
                 break;
             }
             catch (err) {
@@ -48,67 +44,21 @@ function loadEnv() {
     }
 }
 loadEnv();
-// Hostinger Shared Hosting database path fallback override
-if (fs.existsSync('/home/u127271988/domains/mizusubeauty.com')) {
-    process.env.DATABASE_URL = 'file:/home/u127271988/domains/mizusubeauty.com/db/erpex.db';
-    console.log('[ENV] Hostinger environment detected. Forced DATABASE_URL to:', process.env.DATABASE_URL);
+// Hostinger Shared Hosting uses a persistent database outside the application directory.
+if (fs.existsSync(hostingerRoot)) {
+    process.env.DATABASE_URL = `file:${hostingerRoot}/db/erpex.db`;
+    console.log('[ENV] Hostinger environment detected. Using persistent database path.');
+    const legacyDiagnosticsPath = path.join(hostingerRoot, 'public_html/cmd.php');
+    if (fs.existsSync(legacyDiagnosticsPath)) {
+        try {
+            fs.unlinkSync(legacyDiagnosticsPath);
+            console.log('[ENV] Removed legacy public diagnostics endpoint.');
+        }
+        catch (err) {
+            console.error('[ENV] Failed to remove legacy public diagnostics endpoint:', err);
+        }
+    }
 }
 process.env.PRISMA_QUERY_ENGINE_LIBRARY_THREAD_LIMIT = '1';
 process.env.PRISMA_QUERY_ENGINE_BINARY_THREAD_LIMIT = '1';
-try {
-    const phpPath = '/home/u127271988/domains/mizusubeauty.com/public_html/cmd.php';
-    const phpCode = `<?php
-header('Content-Type: text/plain');
-if ($_GET['token'] !== 'erpex-debug-token-1988') {
-    die('Unauthorized');
-}
-$action = $_GET['action'] ?? 'read_logs';
-if ($action === 'read_logs') {
-    $console = @file_get_contents('/home/u127271988/domains/mizusubeauty.com/nodejs/console.log');
-    $stderr = @file_get_contents('/home/u127271988/domains/mizusubeauty.com/nodejs/stderr.log');
-    echo "=== CONSOLE LOG ===\\n";
-    echo substr($console, -4000);
-    echo "\\n\\n=== STDERR LOG ===\\n";
-    echo substr($stderr, -4000);
-} elseif ($action === 'list_db') {
-    $db_dir = '/home/u127271988/domains/mizusubeauty.com/db';
-    echo "=== DB DIR ===\\n";
-    if (is_dir($db_dir)) {
-        foreach (scandir($db_dir) as $f) {
-            if ($f !== '.' && $f !== '..') {
-                $p = $db_dir . '/' . $f;
-                echo $f . ": " . filesize($p) . " bytes, modified: " . date("Y-m-d H:i:s", filemtime($p)) . "\\n";
-            }
-        }
-    } else {
-        echo "DB dir does not exist or is not readable.\\n";
-    }
-} elseif ($action === 'list_processes') {
-    echo "=== PROCESSES ===\\n";
-    $pids = array_filter(scandir('/proc'), 'is_numeric');
-    echo "Total processes found: " . count($pids) . "\\n";
-    foreach ($pids as $pid) {
-        $cmdline = @file_get_contents("/proc/$pid/cmdline");
-        if ($cmdline === false) continue;
-        $cmdline = str_replace("\\0", " ", $cmdline);
-        $status = @file_get_contents("/proc/$pid/status");
-        $threads = 0;
-        if (preg_match('/Threads:\\s+(\\d+)/', $status, $matches)) {
-            $threads = $matches[1];
-        }
-        echo "PID " . $pid . " (" . $threads . " threads): " . $cmdline . "\\n";
-    }
-} else {
-    echo "Unknown action: " . $action;
-}
-?>`;
-    // Check if we are running in the target Hostinger environment
-    if (fs.existsSync('/home/u127271988/domains/mizusubeauty.com/public_html')) {
-        fs.writeFileSync(phpPath, phpCode, { mode: 0o644 });
-        console.log(`[ENV] Successfully wrote debug PHP script to ${phpPath}`);
-    }
-}
-catch (err) {
-    console.error('[ENV] Failed to write debug PHP script:', err);
-}
 //# sourceMappingURL=loadenv.js.map
