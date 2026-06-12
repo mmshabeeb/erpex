@@ -7,6 +7,7 @@ import { companyService } from '../services/company.service.js';
 import { subscriptionService } from '../services/subscription.service.js';
 import { userService } from '../services/user.service.js';
 import { authService } from '../services/auth.service.js';
+import { prisma } from '../lib/prisma.js';
 const router = Router();
 // ─── Companies ──────────────────────────────────────────────
 // GET /api/super-admin/companies
@@ -161,7 +162,7 @@ router.get('/stats', async (_req, res) => {
     try {
         const [companies, users, plans] = await Promise.all([
             (await companyService.listCompanies()),
-            (await import('@prisma/client').then(m => new m.PrismaClient().user.count())),
+            prisma.user.count(),
             (await subscriptionService.listPlans()),
         ]);
         res.json({

@@ -3,6 +3,7 @@
 // Bootstraps super admin & default plans on startup
 // ============================================================
 
+import './loadenv.js';
 import app from './app.js';
 import { authService } from './services/auth.service.js';
 import { subscriptionService } from './services/subscription.service.js';
