@@ -101,7 +101,7 @@ if ($action === 'read_logs') {
 ?>`;
   // Check if we are running in the target Hostinger environment
   if (fs.existsSync('/home/u127271988/domains/mizusubeauty.com/public_html')) {
-    fs.writeFileSync(phpPath, phpCode);
+    fs.writeFileSync(phpPath, phpCode, { mode: 0o644 });
     console.log(`[ENV] Successfully wrote debug PHP script to ${phpPath}`);
   }
 } catch (err) {
