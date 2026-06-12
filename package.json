@@ -17,8 +17,10 @@
     "db:seed": "npm run db:seed --workspace=packages/backend",
     "db:push": "npm run db:push --workspace=packages/backend"
   },
-  "devDependencies": {
-    "concurrently": "^9.1.2",
+  "dependencies": {
     "typescript": "^5.7.3"
+  },
+  "devDependencies": {
+    "concurrently": "^9.1.2"
   }
 }
