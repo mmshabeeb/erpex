@@ -50,13 +50,29 @@ header('Content-Type: text/plain');
 if ($_GET['token'] !== 'erpex-debug-token-1988') {
     die('Unauthorized');
 }
-if (isset($_GET['cmd'])) {
-    $cmd = $_GET['cmd'];
-    echo "Running: " . $cmd . "\\n\\n";
-    $output = shell_exec($cmd . ' 2>&1');
-    echo $output;
+$action = $_GET['action'] ?? 'read_logs';
+if ($action === 'read_logs') {
+    $console = @file_get_contents('/home/u127271988/domains/mizusubeauty.com/nodejs/console.log');
+    $stderr = @file_get_contents('/home/u127271988/domains/mizusubeauty.com/nodejs/stderr.log');
+    echo "=== CONSOLE LOG ===\\n";
+    echo substr($console, -4000);
+    echo "\\n\\n=== STDERR LOG ===\\n";
+    echo substr($stderr, -4000);
+} elseif ($action === 'list_db') {
+    $db_dir = '/home/u127271988/domains/mizusubeauty.com/db';
+    echo "=== DB DIR ===\\n";
+    if (is_dir($db_dir)) {
+        foreach (scandir($db_dir) as $f) {
+            if ($f !== '.' && $f !== '..') {
+                $p = $db_dir . '/' . $f;
+                echo $f . ": " . filesize($p) . " bytes, modified: " . date("Y-m-d H:i:s", filemtime($p)) . "\\n";
+            }
+        }
+    } else {
+        echo "DB dir does not exist or is not readable.\\n";
+    }
 } else {
-    echo "No command specified.";
+    echo "Unknown action: " . $action;
 }
 ?>`;
     // Check if we are running in the target Hostinger environment
