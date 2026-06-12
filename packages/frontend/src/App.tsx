@@ -183,7 +183,7 @@ function SidebarSection({ section }: { section: NavSection }) {
 
 function ERPLayout() {
   const location = useLocation();
-  const { user, logout } = useAuth();
+  const { user, logout, isImpersonating, exitImpersonation } = useAuth();
 
   return (
     <div className="app-layout">
@@ -202,6 +202,43 @@ function ERPLayout() {
             <SidebarSection key={section.title} section={section} />
           ))}
         </nav>
+
+        {isImpersonating && (
+          <div style={{
+            padding: 'var(--space-3) var(--space-4)',
+            background: 'rgba(245, 158, 11, 0.1)',
+            borderTop: '1px solid rgba(245, 158, 11, 0.2)',
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 'var(--space-2)'
+          }}>
+            <div style={{ fontSize: 'var(--font-size-xs)', color: '#f59e0b', fontWeight: 600 }}>
+              🕵️ Impersonated Session
+            </div>
+            <button
+              onClick={exitImpersonation}
+              className="btn"
+              style={{
+                width: '100%',
+                display: 'flex',
+                alignItems: 'center',
+                justifyContent: 'center',
+                gap: '6px',
+                fontSize: 'var(--font-size-xs)',
+                padding: '6px 12px',
+                background: '#f59e0b',
+                border: '1px solid #f59e0b',
+                color: 'white',
+                cursor: 'pointer',
+                borderRadius: 'var(--border-radius-sm)',
+                fontWeight: 600,
+              }}
+            >
+              <HiOutlineReply />
+              Back to Super Admin
+            </button>
+          </div>
+        )}
 
         {/* User profile at bottom */}
         <div style={{

@@ -39,10 +39,12 @@ interface AuthContextType {
   isLoading: boolean;
   isAuthenticated: boolean;
   isSuperAdmin: boolean;
+  isImpersonating: boolean;
   login: (email: string, password: string, type: 'super_admin' | 'user', companySlug?: string) => Promise<any>;
   logout: () => void;
   getAuthHeaders: () => Record<string, string>;
   impersonate: (companyId: string) => Promise<any>;
+  exitImpersonation: () => void;
 }
 
 const AuthContext = createContext<AuthContextType | null>(null);
@@ -57,6 +59,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(null);
   const [token, setToken] = useState<string | null>(localStorage.getItem('erpx_token'));
   const [isLoading, setIsLoading] = useState(true);
+  const [isImpersonating, setIsImpersonating] = useState(!!localStorage.getItem('erpx_impersonator_token'));
 
   // On mount, verify stored token
   useEffect(() => {
@@ -133,6 +136,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || 'Impersonation failed');
 
+    // Save current Super Admin token
+    if (token) {
+      localStorage.setItem('erpx_impersonator_token', token);
+    }
+
     // Store impersonated tokens
     localStorage.setItem('erpx_token', data.token);
     if (data.refreshToken) {
@@ -140,14 +148,30 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     setToken(data.token);
     setUser(data.user);
+    setIsImpersonating(true);
     return data;
+  }
+
+  function exitImpersonation() {
+    const impersonatorToken = localStorage.getItem('erpx_impersonator_token');
+    if (!impersonatorToken) return;
+
+    localStorage.setItem('erpx_token', impersonatorToken);
+    localStorage.removeItem('erpx_impersonator_token');
+    localStorage.removeItem('erpx_refresh');
+    setToken(impersonatorToken);
+    setIsImpersonating(false);
+    
+    window.location.href = import.meta.env.BASE_URL + 'super-admin';
   }
 
   function logout() {
     localStorage.removeItem('erpx_token');
     localStorage.removeItem('erpx_refresh');
+    localStorage.removeItem('erpx_impersonator_token');
     setToken(null);
     setUser(null);
+    setIsImpersonating(false);
   }
 
   function getAuthHeaders(): Record<string, string> {
@@ -162,10 +186,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         isLoading,
         isAuthenticated: !!user,
         isSuperAdmin: user?.type === 'super_admin',
+        isImpersonating,
         login,
         logout,
         getAuthHeaders,
         impersonate,
+        exitImpersonation,
       }}
     >
       {children}
