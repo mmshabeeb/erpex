@@ -13,7 +13,7 @@ export const contraRoutes = Router();
 contraRoutes.get('/', async (req, res, next) => {
   try {
     const { startDate, endDate } = req.query as { startDate?: string; endDate?: string };
-    const entries = await contraService.listContraTransactions(startDate, endDate);
+    const entries = await contraService.listContraTransactions((req as any).companyId, startDate, endDate);
     res.json({ success: true, data: entries });
   } catch (err) { next(err); }
 });
@@ -21,7 +21,7 @@ contraRoutes.get('/', async (req, res, next) => {
 // POST /api/contra — Create contra transaction
 contraRoutes.post('/', validateBody(createContraSchema), async (req, res, next) => {
   try {
-    const entry = await contraService.createContraTransaction(req.body);
+    const entry = await contraService.createContraTransaction((req as any).companyId, req.body);
     res.status(201).json({ success: true, data: entry });
   } catch (err) { next(err); }
 });

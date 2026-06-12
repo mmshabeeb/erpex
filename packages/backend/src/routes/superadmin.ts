@@ -35,7 +35,7 @@ router.post('/companies', async (req: Request, res: Response) => {
 // GET /api/super-admin/companies/:id
 router.get('/companies/:id', async (req: Request, res: Response) => {
   try {
-    const company = await companyService.getCompany(req.params.id);
+    const company = await companyService.getCompany(req.params.id as string);
     if (!company) {
       res.status(404).json({ error: 'Company not found' });
       return;
@@ -49,7 +49,7 @@ router.get('/companies/:id', async (req: Request, res: Response) => {
 // PATCH /api/super-admin/companies/:id
 router.patch('/companies/:id', async (req: Request, res: Response) => {
   try {
-    const company = await companyService.updateCompany(req.params.id, req.body);
+    const company = await companyService.updateCompany(req.params.id as string, req.body);
     res.json(company);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
@@ -59,7 +59,7 @@ router.patch('/companies/:id', async (req: Request, res: Response) => {
 // PATCH /api/super-admin/companies/:id/toggle-status
 router.patch('/companies/:id/toggle-status', async (req: Request, res: Response) => {
   try {
-    const company = await companyService.toggleCompanyStatus(req.params.id);
+    const company = await companyService.toggleCompanyStatus(req.params.id as string);
     res.json(company);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
@@ -71,7 +71,7 @@ router.patch('/companies/:id/toggle-status', async (req: Request, res: Response)
 // GET /api/super-admin/companies/:id/users
 router.get('/companies/:id/users', async (req: Request, res: Response) => {
   try {
-    const users = await userService.listUsers(req.params.id);
+    const users = await userService.listUsers(req.params.id as string);
     res.json(users);
   } catch (err: any) {
     res.status(500).json({ error: err.message });
@@ -81,7 +81,7 @@ router.get('/companies/:id/users', async (req: Request, res: Response) => {
 // POST /api/super-admin/companies/:id/users
 router.post('/companies/:id/users', async (req: Request, res: Response) => {
   try {
-    const user = await userService.createUser(req.params.id, req.body);
+    const user = await userService.createUser(req.params.id as string, req.body);
     res.status(201).json(user);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
@@ -91,7 +91,7 @@ router.post('/companies/:id/users', async (req: Request, res: Response) => {
 // PATCH /api/super-admin/users/:userId
 router.patch('/users/:userId', async (req: Request, res: Response) => {
   try {
-    const user = await userService.updateUser(req.params.userId, req.body);
+    const user = await userService.updateUser(req.params.userId as string, req.body);
     res.json(user);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
@@ -101,7 +101,7 @@ router.patch('/users/:userId', async (req: Request, res: Response) => {
 // PATCH /api/super-admin/users/:userId/toggle-status
 router.patch('/users/:userId/toggle-status', async (req: Request, res: Response) => {
   try {
-    const user = await userService.toggleUserStatus(req.params.userId);
+    const user = await userService.toggleUserStatus(req.params.userId as string);
     res.json(user);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
@@ -116,7 +116,7 @@ router.post('/users/:userId/reset-password', async (req: Request, res: Response)
       res.status(400).json({ error: 'New password is required' });
       return;
     }
-    const result = await userService.resetUserPassword(req.params.userId, newPassword);
+    const result = await userService.resetUserPassword(req.params.userId as string, newPassword);
     res.json(result);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
@@ -143,7 +143,7 @@ router.post('/companies/:id/subscription', async (req: Request, res: Response) =
       res.status(400).json({ error: 'Plan ID is required' });
       return;
     }
-    const sub = await subscriptionService.assignPlan(req.params.id, planId);
+    const sub = await subscriptionService.assignPlan(req.params.id as string, planId);
     res.json(sub);
   } catch (err: any) {
     res.status(400).json({ error: err.message });

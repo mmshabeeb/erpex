@@ -12,7 +12,7 @@ export const journalRoutes = Router();
 // GET /api/journals — List (paginated, filtered)
 journalRoutes.get('/', async (req, res, next) => {
   try {
-    const result = await journalService.listJournals(req.query as any);
+    const result = await journalService.listJournals((req as any).companyId, req.query as any);
     res.json({ success: true, ...result });
   } catch (err) { next(err); }
 });
@@ -20,7 +20,7 @@ journalRoutes.get('/', async (req, res, next) => {
 // GET /api/journals/:id — Get single journal
 journalRoutes.get('/:id', async (req, res, next) => {
   try {
-    const journal = await journalService.getJournal(req.params.id);
+    const journal = await journalService.getJournal((req as any).companyId, req.params.id);
     res.json({ success: true, data: journal });
   } catch (err) { next(err); }
 });
@@ -28,7 +28,7 @@ journalRoutes.get('/:id', async (req, res, next) => {
 // POST /api/journals — Create journal entry
 journalRoutes.post('/', validateBody(createJournalSchema), async (req, res, next) => {
   try {
-    const journal = await journalService.createJournal(req.body);
+    const journal = await journalService.createJournal((req as any).companyId, req.body);
     res.status(201).json({ success: true, data: journal });
   } catch (err) { next(err); }
 });
@@ -36,7 +36,7 @@ journalRoutes.post('/', validateBody(createJournalSchema), async (req, res, next
 // PATCH /api/journals/:id/post — Post a draft journal
 journalRoutes.patch('/:id/post', async (req, res, next) => {
   try {
-    const journal = await journalService.postJournal(req.params.id);
+    const journal = await journalService.postJournal((req as any).companyId, req.params.id);
     res.json({ success: true, data: journal });
   } catch (err) { next(err); }
 });
@@ -45,6 +45,7 @@ journalRoutes.patch('/:id/post', async (req, res, next) => {
 journalRoutes.post('/:id/rectify', async (req, res, next) => {
   try {
     const rectification = await journalService.createRectification(
+      (req as any).companyId,
       req.params.id,
       req.body.narration
     );

@@ -5,6 +5,7 @@
 import prisma from '../lib/prisma.js';
 
 export interface AuditLogData {
+  companyId: string;
   entityType: string;
   entityId: string;
   action: string;
@@ -22,6 +23,7 @@ export interface AuditLogData {
 export async function createAuditLog(data: AuditLogData): Promise<void> {
   await prisma.auditLog.create({
     data: {
+      companyId: data.companyId,
       entityType: data.entityType,
       entityId: data.entityId,
       action: data.action,
@@ -29,7 +31,7 @@ export async function createAuditLog(data: AuditLogData): Promise<void> {
       newValue: data.newValue ? JSON.stringify(data.newValue) : undefined,
       userId: data.userId,
       ipAddress: data.ipAddress,
-      journalEntryId: data.journalEntryId,
+      journalEntryId: data.journalEntryId || undefined,
     },
   });
 }

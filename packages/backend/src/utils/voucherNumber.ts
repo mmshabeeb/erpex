@@ -10,7 +10,7 @@ import { VOUCHER_TYPE_PREFIX } from '@erpex/shared';
  * Format: {PREFIX}-{YYYY}-{NNNN}
  * Example: JV-2026-0001, PV-2026-0042
  */
-export async function generateVoucherNo(type: string): Promise<string> {
+export async function generateVoucherNo(companyId: string, type: string): Promise<string> {
   const prefix = (VOUCHER_TYPE_PREFIX as any)[type] || 'XX';
   const year = new Date().getFullYear();
   const pattern = `${prefix}-${year}-%`;
@@ -18,6 +18,7 @@ export async function generateVoucherNo(type: string): Promise<string> {
   // Find the latest voucher number for this type and year
   const latest = await prisma.journalEntry.findFirst({
     where: {
+      companyId,
       voucherNo: { startsWith: `${prefix}-${year}-` },
     },
     orderBy: { voucherNo: 'desc' },

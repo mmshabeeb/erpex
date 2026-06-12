@@ -4,8 +4,7 @@
 // ============================================================
 
 import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
-
-const API_BASE = 'http://localhost:3001/api';
+import { API_BASE } from '../../lib/api';
 
 interface Company {
   id: string;
@@ -154,12 +153,12 @@ export function ProtectedRoute({ children, requireSuperAdmin = false }: { childr
   }
 
   if (!isAuthenticated) {
-    window.location.href = '/login';
+    window.location.href = import.meta.env.BASE_URL + 'login';
     return null;
   }
 
   if (requireSuperAdmin && !isSuperAdmin) {
-    window.location.href = '/';
+    window.location.href = import.meta.env.BASE_URL;
     return null;
   }
 

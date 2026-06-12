@@ -9,8 +9,8 @@ import { createJournal } from './journal.service.js';
 import { VoucherType, VoucherStatus } from '@erpex/shared';
 import type { ICreateContraPayload } from '@erpex/shared';
 
-export async function listContraTransactions(startDate?: string, endDate?: string) {
-  const where: any = { type: 'CONTRA' as any };
+export async function listContraTransactions(companyId: string, startDate?: string, endDate?: string) {
+  const where: any = { companyId, type: 'CONTRA' as any };
   if (startDate || endDate) {
     where.date = {};
     if (startDate) where.date.gte = new Date(startDate);
@@ -30,11 +30,11 @@ export async function listContraTransactions(startDate?: string, endDate?: strin
   });
 }
 
-export async function createContraTransaction(data: ICreateContraPayload) {
+export async function createContraTransaction(companyId: string, data: ICreateContraPayload) {
   // Validate both accounts are Cash/Bank
   const [fromAccount, toAccount] = await Promise.all([
-    prisma.account.findUnique({ where: { id: data.fromAccountId } }),
-    prisma.account.findUnique({ where: { id: data.toAccountId } }),
+    prisma.account.findFirst({ where: { id: data.fromAccountId, companyId } }),
+    prisma.account.findFirst({ where: { id: data.toAccountId, companyId } }),
   ]);
 
   if (!fromAccount) throw new AppError('Source account not found', 404);
@@ -49,7 +49,7 @@ export async function createContraTransaction(data: ICreateContraPayload) {
 
   // Create journal entry with CONTRA type
   // Credit the source (money leaving), Debit the destination (money arriving)
-  return createJournal({
+  return createJournal(companyId, {
     date: data.date,
     type: VoucherType.CONTRA,
     status: VoucherStatus.POSTED,

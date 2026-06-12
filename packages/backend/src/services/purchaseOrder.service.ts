@@ -14,10 +14,10 @@ const poInclude = {
   },
 };
 
-export async function listPurchaseOrders(filters: {
+export async function listPurchaseOrders(companyId: string, filters: {
   contactId?: string; status?: string; search?: string; page?: number; pageSize?: number;
 }) {
-  const where: any = {};
+  const where: any = { companyId };
   if (filters.contactId) where.contactId = filters.contactId;
   if (filters.status) where.status = filters.status;
   if (filters.search) {
@@ -41,14 +41,14 @@ export async function listPurchaseOrders(filters: {
   return { data, total, page, pageSize };
 }
 
-export async function getPurchaseOrder(id: string) {
-  const po = await prisma.purchaseOrder.findUnique({ where: { id }, include: poInclude });
+export async function getPurchaseOrder(companyId: string, id: string) {
+  const po = await prisma.purchaseOrder.findFirst({ where: { id, companyId }, include: poInclude });
   if (!po) throw new AppError('Purchase order not found', 404);
   return po;
 }
 
-export async function createPurchaseOrder(data: any) {
-  const number = await generateDocNumber('PURCHASE_ORDER', 'purchaseOrder');
+export async function createPurchaseOrder(companyId: string, data: any) {
+  const number = await generateDocNumber(companyId, 'PURCHASE_ORDER', 'purchaseOrder');
   const { lines, discount, ...header } = data;
 
   const lineData = lines.map((l: any, idx: number) => ({
@@ -61,7 +61,7 @@ export async function createPurchaseOrder(data: any) {
 
   return prisma.purchaseOrder.create({
     data: {
-      ...header, number, discount: discount || 0, subtotal, taxTotal, total,
+      ...header, companyId, number, discount: discount || 0, subtotal, taxTotal, total,
       date: new Date(header.date),
       expectedDelivery: header.expectedDelivery ? new Date(header.expectedDelivery) : null,
       lines: { create: lineData },
@@ -70,26 +70,31 @@ export async function createPurchaseOrder(data: any) {
   });
 }
 
-export async function updatePurchaseOrderStatus(id: string, status: string) {
+export async function updatePurchaseOrderStatus(companyId: string, id: string, status: string) {
+  // Verify ownership first
+  const existing = await prisma.purchaseOrder.findFirst({ where: { id, companyId } });
+  if (!existing) throw new AppError('Purchase order not found', 404);
+
   return prisma.purchaseOrder.update({ where: { id }, data: { status }, include: poInclude });
 }
 
 /**
  * Convert PO to Bill — transfers all lines
  */
-export async function convertToBill(poId: string) {
-  const po = await prisma.purchaseOrder.findUnique({
-    where: { id: poId }, include: { lines: true, contact: true },
+export async function convertToBill(companyId: string, poId: string) {
+  const po = await prisma.purchaseOrder.findFirst({
+    where: { id: poId, companyId }, include: { lines: true, contact: true },
   });
   if (!po) throw new AppError('Purchase order not found', 404);
 
   const { generateDocNumber: genBill } = await import('../utils/docNumber.js');
-  const billNumber = await genBill('BILL', 'bill');
+  const billNumber = await genBill(companyId, 'BILL', 'bill');
   const dueDate = new Date();
   dueDate.setDate(dueDate.getDate() + (po.contact?.creditTermDays || 30));
 
   const bill = await prisma.bill.create({
     data: {
+      companyId,
       number: billNumber, contactId: po.contactId, purchaseOrderId: po.id,
       date: new Date(), dueDate,
       subtotal: po.subtotal, taxTotal: po.taxTotal, discount: po.discount,

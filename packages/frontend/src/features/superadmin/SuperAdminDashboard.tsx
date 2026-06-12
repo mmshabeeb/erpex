@@ -12,7 +12,7 @@ import {
   HiOutlinePlus, HiOutlineClock,
 } from 'react-icons/hi';
 
-const API = 'http://localhost:3001/api';
+import { API_BASE as API } from '../../lib/api';
 
 export default function SuperAdminDashboard() {
   const { getAuthHeaders } = useAuth();

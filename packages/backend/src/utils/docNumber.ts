@@ -14,6 +14,7 @@ type DocType = keyof typeof DOCUMENT_PREFIX;
  * Example: INV-2026-0001, PO-2026-0042
  */
 export async function generateDocNumber(
+  companyId: string,
   type: DocType,
   model: string
 ): Promise<string> {
@@ -27,63 +28,63 @@ export async function generateDocNumber(
   switch (model) {
     case 'estimate':
       latestNumber = (await prisma.estimate.findFirst({
-        where: { number: { startsWith: pattern } },
+        where: { companyId, number: { startsWith: pattern } },
         orderBy: { number: 'desc' },
         select: { number: true },
       }))?.number ?? null;
       break;
     case 'salesOrder':
       latestNumber = (await prisma.salesOrder.findFirst({
-        where: { number: { startsWith: pattern } },
+        where: { companyId, number: { startsWith: pattern } },
         orderBy: { number: 'desc' },
         select: { number: true },
       }))?.number ?? null;
       break;
     case 'invoice':
       latestNumber = (await prisma.invoice.findFirst({
-        where: { number: { startsWith: pattern } },
+        where: { companyId, number: { startsWith: pattern } },
         orderBy: { number: 'desc' },
         select: { number: true },
       }))?.number ?? null;
       break;
     case 'creditNote':
       latestNumber = (await prisma.creditNote.findFirst({
-        where: { number: { startsWith: pattern } },
+        where: { companyId, number: { startsWith: pattern } },
         orderBy: { number: 'desc' },
         select: { number: true },
       }))?.number ?? null;
       break;
     case 'purchaseOrder':
       latestNumber = (await prisma.purchaseOrder.findFirst({
-        where: { number: { startsWith: pattern } },
+        where: { companyId, number: { startsWith: pattern } },
         orderBy: { number: 'desc' },
         select: { number: true },
       }))?.number ?? null;
       break;
     case 'bill':
       latestNumber = (await prisma.bill.findFirst({
-        where: { number: { startsWith: pattern } },
+        where: { companyId, number: { startsWith: pattern } },
         orderBy: { number: 'desc' },
         select: { number: true },
       }))?.number ?? null;
       break;
     case 'vendorCredit':
       latestNumber = (await prisma.vendorCredit.findFirst({
-        where: { number: { startsWith: pattern } },
+        where: { companyId, number: { startsWith: pattern } },
         orderBy: { number: 'desc' },
         select: { number: true },
       }))?.number ?? null;
       break;
     case 'paymentReceived':
       latestNumber = (await prisma.paymentReceived.findFirst({
-        where: { number: { startsWith: pattern } },
+        where: { companyId, number: { startsWith: pattern } },
         orderBy: { number: 'desc' },
         select: { number: true },
       }))?.number ?? null;
       break;
     case 'paymentMade':
       latestNumber = (await prisma.paymentMade.findFirst({
-        where: { number: { startsWith: pattern } },
+        where: { companyId, number: { startsWith: pattern } },
         orderBy: { number: 'desc' },
         select: { number: true },
       }))?.number ?? null;

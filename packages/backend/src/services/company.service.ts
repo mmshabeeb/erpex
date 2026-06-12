@@ -86,7 +86,7 @@ interface CreateCompanyInput {
 
 async function createCompany(input: CreateCompanyInput) {
   // 1. Validate GSTIN if India
-  let stateCode = input.state ? undefined : undefined;
+  let stateCode: string | undefined = undefined;
   if (input.country === 'India' && input.gstin) {
     const gstinResult = validateGSTIN(input.gstin);
     if (!gstinResult.valid) {

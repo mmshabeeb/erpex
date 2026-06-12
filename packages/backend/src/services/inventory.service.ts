@@ -8,15 +8,16 @@ import { AppError } from '../middleware/errorHandler.js';
 /**
  * Record an inventory IN movement (purchase, return, adjustment)
  */
-export async function recordInMovement(data: {
+export async function recordInMovement(companyId: string, data: {
   itemId: string; date: Date; qty: number; unitCost: number;
   reference?: string; sourceType?: string; sourceId?: string;
 }) {
-  const item = await prisma.item.findUnique({ where: { id: data.itemId } });
+  const item = await prisma.item.findFirst({ where: { id: data.itemId, companyId } });
   if (!item || item.type !== 'PRODUCT') throw new AppError('Item is not a stockable product', 400);
 
   return prisma.inventoryMovement.create({
     data: {
+      companyId,
       itemId: data.itemId,
       date: data.date,
       type: 'IN',
@@ -35,16 +36,16 @@ export async function recordInMovement(data: {
  * Record an inventory OUT movement using FIFO costing.
  * Consumes oldest lots first and returns the weighted COGS.
  */
-export async function recordOutMovement(data: {
+export async function recordOutMovement(companyId: string, data: {
   itemId: string; date: Date; qty: number;
   reference?: string; sourceType?: string; sourceId?: string;
 }): Promise<{ movement: any; cogs: number }> {
-  const item = await prisma.item.findUnique({ where: { id: data.itemId } });
+  const item = await prisma.item.findFirst({ where: { id: data.itemId, companyId } });
   if (!item || item.type !== 'PRODUCT') throw new AppError('Item is not a stockable product', 400);
 
   // Get available FIFO lots ordered by date (oldest first)
   const lots = await prisma.inventoryMovement.findMany({
-    where: { itemId: data.itemId, type: 'IN', remainingQty: { gt: 0 } },
+    where: { companyId, itemId: data.itemId, type: 'IN', remainingQty: { gt: 0 } },
     orderBy: [{ date: 'asc' }, { createdAt: 'asc' }],
   });
 
@@ -64,7 +65,7 @@ export async function recordOutMovement(data: {
     remaining -= consume;
 
     await prisma.inventoryMovement.update({
-      where: { id: lot.id },
+      where: { id: lot.id, companyId },
       data: { remainingQty: lot.remainingQty - consume },
     });
   }
@@ -72,6 +73,7 @@ export async function recordOutMovement(data: {
   const avgCost = cogs / data.qty;
   const movement = await prisma.inventoryMovement.create({
     data: {
+      companyId,
       itemId: data.itemId,
       date: data.date,
       type: 'OUT',
@@ -91,12 +93,16 @@ export async function recordOutMovement(data: {
 /**
  * Record an inventory adjustment (positive or negative)
  */
-export async function recordAdjustment(data: {
+export async function recordAdjustment(companyId: string, data: {
   itemId: string; date: Date; qty: number; unitCost: number;
   reference?: string;
 }) {
+  const item = await prisma.item.findFirst({ where: { id: data.itemId, companyId } });
+  if (!item || item.type !== 'PRODUCT') throw new AppError('Item is not a stockable product', 400);
+
   return prisma.inventoryMovement.create({
     data: {
+      companyId,
       itemId: data.itemId,
       date: data.date,
       type: 'ADJUST',
@@ -113,15 +119,15 @@ export async function recordAdjustment(data: {
 /**
  * Get stock summary for all products
  */
-export async function getStockSummary() {
+export async function getStockSummary(companyId: string) {
   const items = await prisma.item.findMany({
-    where: { type: 'PRODUCT', isActive: true },
+    where: { companyId, type: 'PRODUCT', isActive: true },
     select: { id: true, name: true, sku: true, reorderLevel: true, sellingPrice: true },
   });
 
   const summaries = await Promise.all(items.map(async (item) => {
     const movements = await prisma.inventoryMovement.findMany({
-      where: { itemId: item.id },
+      where: { companyId, itemId: item.id },
       select: { type: true, qty: true, unitCost: true, totalCost: true },
     });
 
@@ -132,7 +138,7 @@ export async function getStockSummary() {
 
     // FIFO valuation: sum of remaining lots
     const activeLots = await prisma.inventoryMovement.findMany({
-      where: { itemId: item.id, type: 'IN', remainingQty: { gt: 0 } },
+      where: { companyId, itemId: item.id, type: 'IN', remainingQty: { gt: 0 } },
       select: { remainingQty: true, unitCost: true },
     });
     const totalValue = activeLots.reduce((s, l) => s + (l.remainingQty * l.unitCost), 0);
@@ -140,7 +146,7 @@ export async function getStockSummary() {
 
     // Committed stock from confirmed SOs
     const committed = await prisma.salesOrderLine.aggregate({
-      where: { itemId: item.id, salesOrder: { status: 'CONFIRMED' } },
+      where: { itemId: item.id, salesOrder: { companyId, status: 'CONFIRMED' } },
       _sum: { qty: true },
     });
     const committedStock = committed._sum.qty || 0;
@@ -165,9 +171,13 @@ export async function getStockSummary() {
 /**
  * Get movement history for a specific item
  */
-export async function getItemMovements(itemId: string) {
+export async function getItemMovements(companyId: string, itemId: string) {
+  // Verify ownership
+  const item = await prisma.item.findFirst({ where: { id: itemId, companyId } });
+  if (!item) throw new AppError('Item not found', 404);
+
   return prisma.inventoryMovement.findMany({
-    where: { itemId },
+    where: { companyId, itemId },
     orderBy: { date: 'desc' },
   });
 }
@@ -175,7 +185,7 @@ export async function getItemMovements(itemId: string) {
 /**
  * Get items that are at or below reorder level
  */
-export async function getLowStockAlerts() {
-  const summaries = await getStockSummary();
+export async function getLowStockAlerts(companyId: string) {
+  const summaries = await getStockSummary(companyId);
   return summaries.filter(s => s.isLowStock);
 }

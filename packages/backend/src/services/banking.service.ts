@@ -1,6 +1,6 @@
 // ============================================================
 // ERPEX — Banking & Reconciliation Service
-// Bank statement parsing, auto-matching, reconciliation
+// Business logic for bank statements and reconciliation (scoped)
 // ============================================================
 
 import prisma from '../lib/prisma.js';
@@ -19,19 +19,23 @@ export interface ParsedStatementLine {
 }
 
 export async function createBankStatement(
+  companyId: string,
   accountId: string,
   fileName: string,
   periodStart: string,
   periodEnd: string,
   lines: ParsedStatementLine[]
 ) {
-  // Validate bank account exists and is Cash/Bank
-  const account = await prisma.account.findUnique({ where: { id: accountId } });
+  // Validate bank account exists and belongs to the company
+  const account = await prisma.account.findFirst({
+    where: { id: accountId, companyId },
+  });
   if (!account) throw new AppError('Account not found', 404);
   if (!account.isCashOrBank) throw new AppError('Account is not a bank account', 400);
 
   const statement = await prisma.bankStatement.create({
     data: {
+      companyId,
       accountId,
       fileName,
       periodStart: new Date(periodStart),
@@ -55,29 +59,32 @@ export async function createBankStatement(
 
 // ─── Get Reconciliation View ────────────────────────────────
 
-export async function getReconciliationView(accountId: string, statementId?: string) {
-  const account = await prisma.account.findUnique({ where: { id: accountId } });
+export async function getReconciliationView(companyId: string, accountId: string, statementId?: string) {
+  const account = await prisma.account.findFirst({
+    where: { id: accountId, companyId },
+  });
   if (!account) throw new AppError('Account not found', 404);
 
-  // Get the latest bank statement or specific one
+  // Get the latest bank statement or specific one (scoped to company)
   const statement = statementId
-    ? await prisma.bankStatement.findUnique({
-        where: { id: statementId },
+    ? await prisma.bankStatement.findFirst({
+        where: { id: statementId, companyId },
         include: { lines: { orderBy: { date: 'asc' } } },
       })
     : await prisma.bankStatement.findFirst({
-        where: { accountId },
+        where: { accountId, companyId },
         orderBy: { uploadedAt: 'desc' },
         include: { lines: { orderBy: { date: 'asc' } } },
       });
 
   if (!statement) throw new AppError('No bank statement found for this account', 404);
 
-  // Get system ledger entries for this account in the statement period
+  // Get system ledger entries for this account in the statement period (scoped to company)
   const systemItems = await prisma.journalItem.findMany({
     where: {
       accountId,
       journalEntry: {
+        companyId,
         status: 'POSTED',
         date: {
           gte: statement.periodStart,
@@ -138,7 +145,7 @@ export async function getReconciliationView(accountId: string, statementId?: str
 function autoMatchTransactions(
   systemItems: any[],
   bankLines: any[]
-): IReconciliationMatch[] {
+) {
   const matches: IReconciliationMatch[] = [];
   const matchedSystemIds = new Set<string>();
   const matchedBankIds = new Set<string>();
@@ -232,9 +239,12 @@ export async function clearStatementLines(lineIds: string[]) {
 
 // ─── List Bank Statements ───────────────────────────────────
 
-export async function listBankStatements(accountId?: string) {
+export async function listBankStatements(companyId: string, accountId?: string) {
   return prisma.bankStatement.findMany({
-    where: accountId ? { accountId } : {},
+    where: {
+      companyId,
+      ...(accountId ? { accountId } : {}),
+    },
     include: {
       lines: { select: { id: true, isReconciled: true } },
     },

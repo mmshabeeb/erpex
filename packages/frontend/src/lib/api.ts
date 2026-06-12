@@ -3,7 +3,11 @@
 // Centralized fetch wrapper that auto-injects auth headers
 // ============================================================
 
-const API_BASE = 'http://localhost:3001/api';
+// In production: use relative path (Nginx proxies /erpex/api/ → localhost:3001/api/)
+// In dev: hit the backend directly (Vite proxy handles /api/)
+const API_BASE = import.meta.env.PROD
+  ? '/erpex/api'
+  : 'http://localhost:3001/api';
 
 function getAuthHeaders(): Record<string, string> {
   const token = localStorage.getItem('erpx_token');
@@ -99,7 +103,7 @@ if (typeof window !== 'undefined') {
       }
     }
     
-    return originalFetch.call(this, input, init);
+    return originalFetch(input, init);
   } as typeof fetch;
 }
 

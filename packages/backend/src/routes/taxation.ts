@@ -10,9 +10,9 @@ import * as taxService from '../services/tax.service.js';
 export const taxationRoutes = Router();
 
 // GET /api/tax/configs — List tax configurations
-taxationRoutes.get('/configs', async (_req, res, next) => {
+taxationRoutes.get('/configs', async (req, res, next) => {
   try {
-    const configs = await taxService.listTaxConfigs();
+    const configs = await taxService.listTaxConfigs((req as any).companyId);
     res.json({ success: true, data: configs });
   } catch (err) { next(err); }
 });
@@ -20,7 +20,7 @@ taxationRoutes.get('/configs', async (_req, res, next) => {
 // POST /api/tax/configs — Create tax config
 taxationRoutes.post('/configs', validateBody(createTaxConfigSchema), async (req, res, next) => {
   try {
-    const config = await taxService.createTaxConfig(req.body);
+    const config = await taxService.createTaxConfig((req as any).companyId, req.body);
     res.status(201).json({ success: true, data: config });
   } catch (err) { next(err); }
 });
@@ -28,7 +28,7 @@ taxationRoutes.post('/configs', validateBody(createTaxConfigSchema), async (req,
 // PUT /api/tax/configs/:id — Update tax config
 taxationRoutes.put('/configs/:id', validateBody(updateTaxConfigSchema), async (req, res, next) => {
   try {
-    const config = await taxService.updateTaxConfig(req.params.id, req.body);
+    const config = await taxService.updateTaxConfig((req as any).companyId, req.params.id as string, req.body);
     res.json({ success: true, data: config });
   } catch (err) { next(err); }
 });
@@ -41,7 +41,7 @@ taxationRoutes.get('/report', async (req, res, next) => {
       res.status(400).json({ success: false, message: 'startDate and endDate are required' });
       return;
     }
-    const report = await taxService.getTaxReport(startDate, endDate);
+    const report = await taxService.getTaxReport((req as any).companyId, startDate, endDate);
     res.json({ success: true, data: report });
   } catch (err) { next(err); }
 });

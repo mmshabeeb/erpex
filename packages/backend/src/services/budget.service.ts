@@ -6,8 +6,8 @@
 import prisma from '../lib/prisma.js';
 import { AppError } from '../middleware/errorHandler.js';
 
-export async function listBudgets(fiscalYearId?: string) {
-  const where: any = {};
+export async function listBudgets(companyId: string, fiscalYearId?: string) {
+  const where: any = { companyId };
   if (fiscalYearId) where.fiscalYearId = fiscalYearId;
   return prisma.budget.findMany({
     where,
@@ -16,12 +16,13 @@ export async function listBudgets(fiscalYearId?: string) {
   });
 }
 
-export async function upsertBudget(data: {
+export async function upsertBudget(companyId: string, data: {
   name: string; fiscalYearId: string; accountId: string; month: number; year: number; amount: number;
 }) {
   return prisma.budget.upsert({
     where: {
-      fiscalYearId_accountId_month_year: {
+      companyId_fiscalYearId_accountId_month_year: {
+        companyId,
         fiscalYearId: data.fiscalYearId,
         accountId: data.accountId,
         month: data.month,
@@ -29,26 +30,26 @@ export async function upsertBudget(data: {
       },
     },
     update: { amount: data.amount, name: data.name },
-    create: data,
+    create: { ...data, companyId },
   });
 }
 
-export async function bulkUpsertBudgets(items: {
+export async function bulkUpsertBudgets(companyId: string, items: {
   name: string; fiscalYearId: string; accountId: string; month: number; year: number; amount: number;
 }[]) {
   const results = [];
   for (const item of items) {
-    results.push(await upsertBudget(item));
+    results.push(await upsertBudget(companyId, item));
   }
   return results;
 }
 
-export async function getBudgetVsActual(fiscalYearId: string) {
-  const fy = await prisma.fiscalYear.findUnique({ where: { id: fiscalYearId } });
+export async function getBudgetVsActual(companyId: string, fiscalYearId: string) {
+  const fy = await prisma.fiscalYear.findFirst({ where: { id: fiscalYearId, companyId } });
   if (!fy) throw new AppError('Fiscal year not found', 404);
 
   const budgets = await prisma.budget.findMany({
-    where: { fiscalYearId },
+    where: { companyId, fiscalYearId },
     include: { account: { select: { id: true, code: true, name: true, type: true } } },
   });
 
@@ -60,7 +61,7 @@ export async function getBudgetVsActual(fiscalYearId: string) {
     const items = await prisma.journalItem.findMany({
       where: {
         accountId: b.accountId,
-        journalEntry: { status: 'POSTED', date: { gte: monthStart, lte: monthEnd } },
+        journalEntry: { companyId, status: 'POSTED', date: { gte: monthStart, lte: monthEnd } },
       },
       select: { debit: true, credit: true },
     });

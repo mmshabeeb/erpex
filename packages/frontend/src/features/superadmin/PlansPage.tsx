@@ -7,7 +7,7 @@ import React, { useState, useEffect } from 'react';
 import { useAuth } from '../auth/AuthProvider';
 import { HiOutlineCreditCard, HiOutlineCheck, HiOutlineX } from 'react-icons/hi';
 
-const API = 'http://localhost:3001/api';
+import { API_BASE as API } from '../../lib/api';
 
 export default function PlansPage() {
   const { getAuthHeaders } = useAuth();

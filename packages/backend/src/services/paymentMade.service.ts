@@ -8,10 +8,10 @@ import { AppError } from '../middleware/errorHandler.js';
 import { generateDocNumber } from '../utils/docNumber.js';
 import { generateVoucherNo } from '../utils/voucherNumber.js';
 
-export async function listPaymentsMade(filters: {
+export async function listPaymentsMade(companyId: string, filters: {
   contactId?: string; search?: string; page?: number; pageSize?: number;
 }) {
-  const where: any = {};
+  const where: any = { companyId };
   if (filters.contactId) where.contactId = filters.contactId;
   if (filters.search) {
     where.OR = [{ number: { contains: filters.search } }, { referenceNo: { contains: filters.search } }];
@@ -36,9 +36,9 @@ export async function listPaymentsMade(filters: {
   return { data, total, page, pageSize };
 }
 
-export async function createPaymentMade(data: any) {
+export async function createPaymentMade(companyId: string, data: any) {
   const { allocations, ...paymentData } = data;
-  const number = await generateDocNumber('PAYMENT_MADE', 'paymentMade');
+  const number = await generateDocNumber(companyId, 'PAYMENT_MADE', 'paymentMade');
 
   const totalAllocated = allocations.reduce((s: number, a: any) => s + a.amount, 0);
   if (Math.abs(totalAllocated - data.amount) > 0.01) {
@@ -47,7 +47,7 @@ export async function createPaymentMade(data: any) {
 
   const payment = await prisma.paymentMade.create({
     data: {
-      ...paymentData, number, date: new Date(paymentData.date),
+      ...paymentData, companyId, number, date: new Date(paymentData.date),
       allocations: { create: allocations },
     },
     include: { contact: { select: { id: true, name: true } }, allocations: true },
@@ -55,7 +55,7 @@ export async function createPaymentMade(data: any) {
 
   // Update bill balances
   for (const alloc of allocations) {
-    const bill = await prisma.bill.findUnique({ where: { id: alloc.billId } });
+    const bill = await prisma.bill.findFirst({ where: { id: alloc.billId, companyId } });
     if (!bill) continue;
     const newPaid = bill.amountPaid + alloc.amount;
     const newDue = bill.total - newPaid;
@@ -66,15 +66,16 @@ export async function createPaymentMade(data: any) {
   }
 
   // JE: Dr AP, Cr Bank
-  const apAccount = await prisma.account.findFirst({ where: { code: '21100' } });
+  const apAccount = await prisma.account.findFirst({ where: { code: '21100', companyId } });
   const bankAccount = data.bankAccountId
-    ? await prisma.account.findUnique({ where: { id: data.bankAccountId } })
-    : await prisma.account.findFirst({ where: { code: '11103' } });
+    ? await prisma.account.findFirst({ where: { id: data.bankAccountId, companyId } })
+    : await prisma.account.findFirst({ where: { code: '11103', companyId } });
 
   if (apAccount && bankAccount) {
-    const voucherNo = await generateVoucherNo('PAYMENT');
+    const voucherNo = await generateVoucherNo(companyId, 'PAYMENT');
     const je = await prisma.journalEntry.create({
       data: {
+        companyId,
         voucherNo, date: new Date(data.date), type: 'PAYMENT', status: 'POSTED',
         narration: `Payment ${number} to ${payment.contact?.name}`,
         items: {

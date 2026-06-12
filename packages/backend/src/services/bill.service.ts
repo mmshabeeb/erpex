@@ -18,11 +18,11 @@ const billInclude = {
   },
 };
 
-export async function listBills(filters: {
+export async function listBills(companyId: string, filters: {
   contactId?: string; status?: string; search?: string; page?: number; pageSize?: number;
   startDate?: string; endDate?: string;
 }) {
-  const where: any = {};
+  const where: any = { companyId };
   if (filters.contactId) where.contactId = filters.contactId;
   if (filters.status) where.status = filters.status;
   if (filters.search) {
@@ -51,14 +51,14 @@ export async function listBills(filters: {
   return { data, total, page, pageSize };
 }
 
-export async function getBill(id: string) {
-  const bill = await prisma.bill.findUnique({ where: { id }, include: billInclude });
+export async function getBill(companyId: string, id: string) {
+  const bill = await prisma.bill.findFirst({ where: { id, companyId }, include: billInclude });
   if (!bill) throw new AppError('Bill not found', 404);
   return bill;
 }
 
-export async function createBill(data: any) {
-  const number = await generateDocNumber('BILL', 'bill');
+export async function createBill(companyId: string, data: any) {
+  const number = await generateDocNumber(companyId, 'BILL', 'bill');
   const { lines, discount, ...header } = data;
 
   const lineData = lines.map((l: any, idx: number) => ({
@@ -71,7 +71,7 @@ export async function createBill(data: any) {
 
   return prisma.bill.create({
     data: {
-      ...header, number, discount: discount || 0, subtotal, taxTotal, total,
+      ...header, companyId, number, discount: discount || 0, subtotal, taxTotal, total,
       amountPaid: 0, amountDue: total,
       date: new Date(header.date), dueDate: new Date(header.dueDate),
       lines: { create: lineData },
@@ -86,15 +86,15 @@ export async function createBill(data: any) {
  * Dr Input Tax Credit [taxTotal]
  *   Cr Accounts Payable [total]
  */
-export async function postBill(id: string) {
-  const bill = await prisma.bill.findUnique({
-    where: { id }, include: { lines: { include: { item: true } }, contact: true },
+export async function postBill(companyId: string, id: string) {
+  const bill = await prisma.bill.findFirst({
+    where: { id, companyId }, include: { lines: { include: { item: true } }, contact: true },
   });
   if (!bill) throw new AppError('Bill not found', 404);
   if (bill.status !== 'DRAFT') throw new AppError('Only draft bills can be posted', 400);
 
-  const apAccount = await prisma.account.findFirst({ where: { code: '21100' } }); // Accounts Payable
-  const itcAccount = await prisma.account.findFirst({ where: { code: '11500' } }); // GST Receivable (ITC)
+  const apAccount = await prisma.account.findFirst({ where: { code: '21100', companyId } }); // Accounts Payable
+  const itcAccount = await prisma.account.findFirst({ where: { code: '11500', companyId } }); // GST Receivable (ITC)
 
   if (!apAccount) throw new AppError('Accounts Payable account not found in COA', 500);
 
@@ -104,7 +104,7 @@ export async function postBill(id: string) {
   for (const line of bill.lines) {
     if (line.item && line.item.type === 'PRODUCT' && line.item.inventoryAccountId) {
       // Record inventory IN movement
-      await recordInMovement({
+      await recordInMovement(companyId, {
         itemId: line.item.id, date: bill.date, qty: line.qty, unitCost: line.rate,
         reference: bill.number, sourceType: 'PURCHASE', sourceId: bill.id,
       });
@@ -121,7 +121,7 @@ export async function postBill(id: string) {
       });
     } else {
       // Fallback: use a generic purchase account
-      const genericPurchase = await prisma.account.findFirst({ where: { code: '51000' } });
+      const genericPurchase = await prisma.account.findFirst({ where: { code: '51000', companyId } });
       if (genericPurchase) {
         jeItems.push({
           accountId: genericPurchase.id, debit: line.qty * line.rate, credit: 0,
@@ -145,9 +145,10 @@ export async function postBill(id: string) {
     narration: `Bill ${bill.number}`,
   });
 
-  const voucherNo = await generateVoucherNo('PURCHASE');
+  const voucherNo = await generateVoucherNo(companyId, 'PURCHASE');
   const je = await prisma.journalEntry.create({
     data: {
+      companyId,
       voucherNo, date: bill.date, type: 'PURCHASE', status: 'POSTED',
       narration: `Bill ${bill.number} - ${bill.contact?.name}`,
       billId: bill.id,
@@ -156,20 +157,22 @@ export async function postBill(id: string) {
   });
 
   await prisma.bill.update({
-    where: { id }, data: { status: 'RECEIVED', journalEntryId: je.id },
+    where: { id, companyId }, data: { status: 'RECEIVED', journalEntryId: je.id },
   });
 
   await createAuditLog({
+    companyId,
     entityType: 'Bill', entityId: id, action: 'POSTED',
     newValue: { number: bill.number, total: bill.total, journalEntryId: je.id },
   });
 
-  return getBill(id);
+  return getBill(companyId, id);
 }
 
-export async function getUnpaidBills(contactId: string) {
+export async function getUnpaidBills(companyId: string, contactId: string) {
   return prisma.bill.findMany({
     where: {
+      companyId,
       contactId, status: { in: ['RECEIVED', 'PARTIALLY_PAID', 'OVERDUE'] },
       amountDue: { gt: 0 },
     },

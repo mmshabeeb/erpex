@@ -9,10 +9,10 @@ import { generateDocNumber } from '../utils/docNumber.js';
 import { generateVoucherNo } from '../utils/voucherNumber.js';
 import { createAuditLog } from '../middleware/auditLogger.js';
 
-export async function listPaymentsReceived(filters: {
+export async function listPaymentsReceived(companyId: string, filters: {
   contactId?: string; search?: string; page?: number; pageSize?: number;
 }) {
-  const where: any = {};
+  const where: any = { companyId };
   if (filters.contactId) where.contactId = filters.contactId;
   if (filters.search) {
     where.OR = [
@@ -43,9 +43,9 @@ export async function listPaymentsReceived(filters: {
   return { data, total, page, pageSize };
 }
 
-export async function createPaymentReceived(data: any) {
+export async function createPaymentReceived(companyId: string, data: any) {
   const { allocations, ...paymentData } = data;
-  const number = await generateDocNumber('PAYMENT_RECEIVED', 'paymentReceived');
+  const number = await generateDocNumber(companyId, 'PAYMENT_RECEIVED', 'paymentReceived');
 
   // Validate allocation amounts
   const totalAllocated = allocations.reduce((s: number, a: any) => s + a.amount, 0);
@@ -55,7 +55,7 @@ export async function createPaymentReceived(data: any) {
 
   // Validate each invoice has sufficient balance
   for (const alloc of allocations) {
-    const invoice = await prisma.invoice.findUnique({ where: { id: alloc.invoiceId } });
+    const invoice = await prisma.invoice.findFirst({ where: { id: alloc.invoiceId, companyId } });
     if (!invoice) throw new AppError(`Invoice ${alloc.invoiceId} not found`, 404);
     if (alloc.amount > invoice.amountDue + 0.01) {
       throw new AppError(`Allocation ${alloc.amount} exceeds invoice ${invoice.number} balance ${invoice.amountDue}`, 400);
@@ -66,6 +66,7 @@ export async function createPaymentReceived(data: any) {
   const payment = await prisma.paymentReceived.create({
     data: {
       ...paymentData,
+      companyId,
       number,
       date: new Date(paymentData.date),
       allocations: { create: allocations },
@@ -78,7 +79,7 @@ export async function createPaymentReceived(data: any) {
 
   // Update invoice balances and statuses
   for (const alloc of allocations) {
-    const invoice = await prisma.invoice.findUnique({ where: { id: alloc.invoiceId } });
+    const invoice = await prisma.invoice.findFirst({ where: { id: alloc.invoiceId, companyId } });
     if (!invoice) continue;
 
     const newPaid = invoice.amountPaid + alloc.amount;
@@ -93,14 +94,15 @@ export async function createPaymentReceived(data: any) {
 
   // Generate journal entry: Dr Bank, Cr Accounts Receivable
   const bankAccount = data.bankAccountId
-    ? await prisma.account.findUnique({ where: { id: data.bankAccountId } })
-    : await prisma.account.findFirst({ where: { code: '11103' } }); // HDFC Bank default
-  const arAccount = await prisma.account.findFirst({ where: { code: '11200' } });
+    ? await prisma.account.findFirst({ where: { id: data.bankAccountId, companyId } })
+    : await prisma.account.findFirst({ where: { code: '11103', companyId } }); // HDFC Bank default
+  const arAccount = await prisma.account.findFirst({ where: { code: '11200', companyId } });
 
   if (bankAccount && arAccount) {
-    const voucherNo = await generateVoucherNo('RECEIPT');
+    const voucherNo = await generateVoucherNo(companyId, 'RECEIPT');
     const je = await prisma.journalEntry.create({
       data: {
+        companyId,
         voucherNo,
         date: new Date(data.date),
         type: 'RECEIPT',
@@ -116,12 +118,13 @@ export async function createPaymentReceived(data: any) {
     });
 
     await prisma.paymentReceived.update({
-      where: { id: payment.id },
+      where: { id: payment.id, companyId },
       data: { journalEntryId: je.id },
     });
   }
 
   await createAuditLog({
+    companyId,
     entityType: 'PaymentReceived',
     entityId: payment.id,
     action: 'CREATED',

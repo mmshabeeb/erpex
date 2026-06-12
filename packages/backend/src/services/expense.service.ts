@@ -7,11 +7,11 @@ import prisma from '../lib/prisma.js';
 import { AppError } from '../middleware/errorHandler.js';
 import { generateVoucherNo } from '../utils/voucherNumber.js';
 
-export async function listExpenses(filters: {
+export async function listExpenses(companyId: string, filters: {
   search?: string; page?: number; pageSize?: number; startDate?: string; endDate?: string;
   isBillable?: boolean;
 }) {
-  const where: any = {};
+  const where: any = { companyId };
   if (filters.search) {
     where.OR = [
       { description: { contains: filters.search } },
@@ -45,11 +45,12 @@ export async function listExpenses(filters: {
   return { data, total, page, pageSize };
 }
 
-export async function createExpense(data: any) {
+export async function createExpense(companyId: string, data: any) {
   // Create the expense record
   const expense = await prisma.expense.create({
     data: {
       ...data,
+      companyId,
       date: new Date(data.date),
       taxAmount: data.taxAmount || 0,
     },
@@ -61,17 +62,17 @@ export async function createExpense(data: any) {
 
   // Auto-generate journal entry: Dr Expense, Cr Cash/Bank
   const paymentAccountCode = data.paymentMethod === 'CASH' ? '11101' : '11103'; // Cash or HDFC
-  const paymentAccount = await prisma.account.findFirst({ where: { code: paymentAccountCode } });
+  const paymentAccount = await prisma.account.findFirst({ where: { code: paymentAccountCode, companyId } });
 
   if (paymentAccount) {
     const totalAmount = data.amount + (data.taxAmount || 0);
-    const voucherNo = await generateVoucherNo('PAYMENT');
+    const voucherNo = await generateVoucherNo(companyId, 'PAYMENT');
     const jeItems: any[] = [
       { accountId: data.accountId, debit: data.amount, credit: 0, narration: data.description },
     ];
 
     if (data.taxAmount > 0) {
-      const itcAccount = await prisma.account.findFirst({ where: { code: '11500' } });
+      const itcAccount = await prisma.account.findFirst({ where: { code: '11500', companyId } });
       if (itcAccount) {
         jeItems.push({ accountId: itcAccount.id, debit: data.taxAmount, credit: 0, narration: `ITC - ${data.description}` });
       }
@@ -81,13 +82,14 @@ export async function createExpense(data: any) {
 
     const je = await prisma.journalEntry.create({
       data: {
+        companyId,
         voucherNo, date: new Date(data.date), type: 'PAYMENT', status: 'POSTED',
         narration: `Expense: ${data.description}`,
         items: { create: jeItems },
       },
     });
 
-    await prisma.expense.update({ where: { id: expense.id }, data: { journalEntryId: je.id } });
+    await prisma.expense.update({ where: { id: expense.id, companyId }, data: { journalEntryId: je.id } });
   }
 
   return expense;

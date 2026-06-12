@@ -10,8 +10,9 @@ import type { ICreateFiscalYearPayload } from '@erpex/shared';
 
 // ─── List Fiscal Years ──────────────────────────────────────
 
-export async function listFiscalYears() {
+export async function listFiscalYears(companyId: string) {
   return prisma.fiscalYear.findMany({
+    where: { companyId },
     include: {
       periods: { orderBy: [{ year: 'asc' }, { month: 'asc' }] },
     },
@@ -21,13 +22,14 @@ export async function listFiscalYears() {
 
 // ─── Create Fiscal Year with Auto-Generated Periods ─────────
 
-export async function createFiscalYear(data: ICreateFiscalYearPayload) {
+export async function createFiscalYear(companyId: string, data: ICreateFiscalYearPayload) {
   const startDate = new Date(data.startDate);
   const endDate = new Date(data.endDate);
 
   // Check for overlap with existing fiscal years
   const overlap = await prisma.fiscalYear.findFirst({
     where: {
+      companyId,
       OR: [
         { startDate: { lte: endDate }, endDate: { gte: startDate } },
       ],
@@ -63,6 +65,7 @@ export async function createFiscalYear(data: ICreateFiscalYearPayload) {
 
   const fiscalYear = await prisma.fiscalYear.create({
     data: {
+      companyId,
       name: data.name,
       startDate,
       endDate,
@@ -74,6 +77,7 @@ export async function createFiscalYear(data: ICreateFiscalYearPayload) {
   });
 
   await createAuditLog({
+    companyId,
     entityType: 'FiscalYear',
     entityId: fiscalYear.id,
     action: 'CREATED',
@@ -85,8 +89,10 @@ export async function createFiscalYear(data: ICreateFiscalYearPayload) {
 
 // ─── Lock/Unlock Period ─────────────────────────────────────
 
-export async function togglePeriodLock(periodId: string, lock: boolean) {
-  const period = await prisma.fiscalPeriod.findUnique({ where: { id: periodId } });
+export async function togglePeriodLock(companyId: string, periodId: string, lock: boolean) {
+  const period = await prisma.fiscalPeriod.findFirst({
+    where: { id: periodId, fiscalYear: { companyId } },
+  });
   if (!period) throw new AppError('Fiscal period not found', 404);
 
   const updated = await prisma.fiscalPeriod.update({
@@ -95,6 +101,7 @@ export async function togglePeriodLock(periodId: string, lock: boolean) {
   });
 
   await createAuditLog({
+    companyId,
     entityType: 'FiscalPeriod',
     entityId: periodId,
     action: lock ? 'LOCKED' : 'UNLOCKED',
@@ -107,9 +114,9 @@ export async function togglePeriodLock(periodId: string, lock: boolean) {
 
 // ─── Close Fiscal Year ──────────────────────────────────────
 
-export async function closeFiscalYear(id: string) {
-  const fy = await prisma.fiscalYear.findUnique({
-    where: { id },
+export async function closeFiscalYear(companyId: string, id: string) {
+  const fy = await prisma.fiscalYear.findFirst({
+    where: { id, companyId },
     include: { periods: true },
   });
   if (!fy) throw new AppError('Fiscal year not found', 404);
@@ -118,6 +125,7 @@ export async function closeFiscalYear(id: string) {
   // Check for any draft entries in this fiscal year
   const draftCount = await prisma.journalEntry.count({
     where: {
+      companyId,
       fiscalYearId: id,
       status: 'DRAFT',
     },
@@ -133,20 +141,21 @@ export async function closeFiscalYear(id: string) {
       data: { isLocked: true },
     }),
     prisma.fiscalYear.update({
-      where: { id },
+      where: { id, companyId },
       data: { isClosed: true },
     }),
   ]);
 
   await createAuditLog({
+    companyId,
     entityType: 'FiscalYear',
     entityId: id,
     action: 'CLOSED',
     newValue: { name: fy.name, isClosed: true },
   });
 
-  return prisma.fiscalYear.findUnique({
-    where: { id },
+  return prisma.fiscalYear.findFirst({
+    where: { id, companyId },
     include: { periods: true },
   });
 }

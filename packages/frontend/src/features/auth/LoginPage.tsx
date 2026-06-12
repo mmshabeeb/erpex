@@ -35,7 +35,9 @@ export default function LoginPage() {
         return;
       }
       // Redirect based on login type
-      window.location.href = loginType === 'super_admin' ? '/super-admin' : '/';
+      window.location.href = loginType === 'super_admin' 
+        ? import.meta.env.BASE_URL + 'super-admin' 
+        : import.meta.env.BASE_URL;
     } catch (err: any) {
       setError(err.message || 'Login failed');
     }
@@ -49,7 +51,7 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await login(email, password, 'user', slug);
-      window.location.href = '/';
+      window.location.href = import.meta.env.BASE_URL;
     } catch (err: any) {
       setError(err.message || 'Login failed');
     }

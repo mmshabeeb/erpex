@@ -14,10 +14,10 @@ const itemInclude = {
   inventoryAccount: { select: { id: true, code: true, name: true } },
 };
 
-export async function listItems(filters: {
+export async function listItems(companyId: string, filters: {
   type?: string; groupId?: string; search?: string; page?: number; pageSize?: number;
 }) {
-  const where: any = {};
+  const where: any = { companyId };
   if (filters.type) where.type = filters.type;
   if (filters.groupId) where.groupId = filters.groupId;
   if (filters.search) {
@@ -48,7 +48,7 @@ export async function listItems(filters: {
       return { ...item, stockOnHand: 0, committedStock: 0, availableStock: 0 };
     }
     const movements = await prisma.inventoryMovement.findMany({
-      where: { itemId: item.id },
+      where: { companyId, itemId: item.id },
       select: { type: true, qty: true },
     });
     const totalIn = movements.filter(m => m.type === 'IN').reduce((s, m) => s + m.qty, 0);
@@ -58,7 +58,7 @@ export async function listItems(filters: {
 
     // Committed = confirmed SO lines not yet fulfilled
     const committed = await prisma.salesOrderLine.aggregate({
-      where: { itemId: item.id, salesOrder: { status: 'CONFIRMED' } },
+      where: { itemId: item.id, salesOrder: { companyId, status: 'CONFIRMED' } },
       _sum: { qty: true },
     });
     const committedStock = committed._sum.qty || 0;
@@ -69,54 +69,62 @@ export async function listItems(filters: {
   return { data: enriched, total, page, pageSize };
 }
 
-export async function getItem(id: string) {
-  const item = await prisma.item.findUnique({ where: { id }, include: itemInclude });
+export async function getItem(companyId: string, id: string) {
+  const item = await prisma.item.findFirst({ where: { id, companyId }, include: itemInclude });
   if (!item) throw new AppError('Item not found', 404);
   return item;
 }
 
-export async function createItem(data: any) {
-  const existing = await prisma.item.findUnique({ where: { sku: data.sku } });
+export async function createItem(companyId: string, data: any) {
+  const existing = await prisma.item.findFirst({ where: { companyId, sku: data.sku } });
   if (existing) throw new AppError(`SKU ${data.sku} already exists`, 400);
-  return prisma.item.create({ data, include: itemInclude });
+  return prisma.item.create({ data: { ...data, companyId }, include: itemInclude });
 }
 
-export async function updateItem(id: string, data: any) {
+export async function updateItem(companyId: string, id: string, data: any) {
+  // Verify ownership
+  const existing = await prisma.item.findFirst({ where: { id, companyId } });
+  if (!existing) throw new AppError('Item not found', 404);
+
   return prisma.item.update({ where: { id }, data, include: itemInclude });
 }
 
 // ─── Item Groups ────────────────────────────────────────────
 
-export async function listItemGroups() {
+export async function listItemGroups(companyId: string) {
   return prisma.itemGroup.findMany({
     include: { children: true },
-    where: { parentId: null },
+    where: { companyId, parentId: null },
     orderBy: { name: 'asc' },
   });
 }
 
-export async function createItemGroup(data: { name: string; description?: string; parentId?: string }) {
-  return prisma.itemGroup.create({ data });
+export async function createItemGroup(companyId: string, data: { name: string; description?: string; parentId?: string }) {
+  return prisma.itemGroup.create({ data: { ...data, companyId } });
 }
 
 // ─── Price Lists ────────────────────────────────────────────
 
-export async function listPriceLists() {
+export async function listPriceLists(companyId: string) {
   return prisma.priceList.findMany({
+    where: { companyId },
     include: { items: { include: { item: { select: { id: true, name: true, sku: true } } } } },
     orderBy: { name: 'asc' },
   });
 }
 
-export async function createPriceList(data: any) {
+export async function createPriceList(companyId: string, data: any) {
   const { items, ...plData } = data;
   return prisma.priceList.create({
-    data: { ...plData, items: items ? { create: items } : undefined },
+    data: { ...plData, companyId, items: items ? { create: items } : undefined },
     include: { items: true },
   });
 }
 
-export async function updatePriceList(id: string, data: any) {
+export async function updatePriceList(companyId: string, id: string, data: any) {
+  const existing = await prisma.priceList.findFirst({ where: { id, companyId } });
+  if (!existing) throw new AppError('Price list not found', 404);
+
   const { items, ...plData } = data;
   if (items) {
     await prisma.priceListItem.deleteMany({ where: { priceListId: id } });

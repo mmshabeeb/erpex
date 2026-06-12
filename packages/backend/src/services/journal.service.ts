@@ -11,8 +11,8 @@ import type { ICreateJournalPayload, IJournalFilter } from '@erpex/shared';
 
 // ─── List Journals (Paginated + Filtered) ───────────────────
 
-export async function listJournals(filters: IJournalFilter) {
-  const where: any = {};
+export async function listJournals(companyId: string, filters: IJournalFilter) {
+  const where: any = { companyId };
   if (filters.type) where.type = filters.type;
   if (filters.status) where.status = filters.status;
   if (filters.startDate || filters.endDate) {
@@ -59,9 +59,9 @@ export async function listJournals(filters: IJournalFilter) {
 
 // ─── Get Single Journal ─────────────────────────────────────
 
-export async function getJournal(id: string) {
-  const entry = await prisma.journalEntry.findUnique({
-    where: { id },
+export async function getJournal(companyId: string, id: string) {
+  const entry = await prisma.journalEntry.findFirst({
+    where: { id, companyId },
     include: {
       items: {
         include: {
@@ -84,7 +84,7 @@ export async function getJournal(id: string) {
 
 // ─── Create Journal Entry ───────────────────────────────────
 
-export async function createJournal(data: ICreateJournalPayload) {
+export async function createJournal(companyId: string, data: ICreateJournalPayload) {
   // Double-entry validation (already done in Zod, but double-check)
   const totalDebit = data.items.reduce((s, i) => s + i.debit, 0);
   const totalCredit = data.items.reduce((s, i) => s + i.credit, 0);
@@ -96,6 +96,7 @@ export async function createJournal(data: ICreateJournalPayload) {
   const txDate = new Date(data.date);
   const lockedPeriod = await prisma.fiscalPeriod.findFirst({
     where: {
+      fiscalYear: { companyId },
       isLocked: true,
       startDate: { lte: txDate },
       endDate: { gte: txDate },
@@ -108,6 +109,7 @@ export async function createJournal(data: ICreateJournalPayload) {
   // Find matching fiscal year
   const fiscalYear = await prisma.fiscalYear.findFirst({
     where: {
+      companyId,
       startDate: { lte: txDate },
       endDate: { gte: txDate },
       isClosed: false,
@@ -117,7 +119,7 @@ export async function createJournal(data: ICreateJournalPayload) {
   // Verify all account IDs exist
   const accountIds = data.items.map(i => i.accountId);
   const accounts = await prisma.account.findMany({
-    where: { id: { in: accountIds } },
+    where: { id: { in: accountIds }, companyId },
     select: { id: true, isActive: true },
   });
   if (accounts.length !== new Set(accountIds).size) {
@@ -128,10 +130,11 @@ export async function createJournal(data: ICreateJournalPayload) {
     throw new AppError('Cannot post to inactive account', 400);
   }
 
-  const voucherNo = await generateVoucherNo(data.type as any);
+  const voucherNo = await generateVoucherNo(companyId, data.type as any);
 
   const entry = await prisma.journalEntry.create({
     data: {
+      companyId,
       voucherNo,
       date: txDate,
       type: data.type,
@@ -160,6 +163,7 @@ export async function createJournal(data: ICreateJournalPayload) {
   });
 
   await createAuditLog({
+    companyId,
     entityType: 'JournalEntry',
     entityId: entry.id,
     action: 'CREATED',
@@ -172,14 +176,15 @@ export async function createJournal(data: ICreateJournalPayload) {
 
 // ─── Post a Draft Journal (Immutable Once Posted) ───────────
 
-export async function postJournal(id: string) {
-  const entry = await prisma.journalEntry.findUnique({ where: { id } });
+export async function postJournal(companyId: string, id: string) {
+  const entry = await prisma.journalEntry.findFirst({ where: { id, companyId } });
   if (!entry) throw new AppError('Journal entry not found', 404);
   if (entry.status === 'POSTED') throw new AppError('Journal is already posted', 400);
 
   // Check fiscal period lock again at posting time
   const lockedPeriod = await prisma.fiscalPeriod.findFirst({
     where: {
+      fiscalYear: { companyId },
       isLocked: true,
       startDate: { lte: entry.date },
       endDate: { gte: entry.date },
@@ -190,7 +195,7 @@ export async function postJournal(id: string) {
   }
 
   const updated = await prisma.journalEntry.update({
-    where: { id },
+    where: { id, companyId },
     data: { status: 'POSTED' },
     include: {
       items: {
@@ -202,6 +207,7 @@ export async function postJournal(id: string) {
   });
 
   await createAuditLog({
+    companyId,
     entityType: 'JournalEntry',
     entityId: id,
     action: 'POSTED',
@@ -215,19 +221,20 @@ export async function postJournal(id: string) {
 
 // ─── Create Rectification Entry ─────────────────────────────
 
-export async function createRectification(originalId: string, narration?: string) {
-  const original = await prisma.journalEntry.findUnique({
-    where: { id: originalId },
+export async function createRectification(companyId: string, originalId: string, narration?: string) {
+  const original = await prisma.journalEntry.findFirst({
+    where: { id: originalId, companyId },
     include: { items: true },
   });
   if (!original) throw new AppError('Original journal entry not found', 404);
   if (original.status !== 'POSTED') throw new AppError('Can only rectify posted entries', 400);
 
-  const voucherNo = await generateVoucherNo(original.type);
+  const voucherNo = await generateVoucherNo(companyId, original.type);
 
   // Create mirror entry (swap debits and credits)
   const rectEntry = await prisma.journalEntry.create({
     data: {
+      companyId,
       voucherNo,
       date: new Date(),
       type: original.type,
@@ -256,6 +263,7 @@ export async function createRectification(originalId: string, narration?: string
   });
 
   await createAuditLog({
+    companyId,
     entityType: 'JournalEntry',
     entityId: rectEntry.id,
     action: 'RECTIFICATION_CREATED',

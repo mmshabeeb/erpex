@@ -1,0 +1,105 @@
+name: Deploy ERPEX to Hostinger VPS
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch: # Allow manual trigger
+
+env:
+  NODE_VERSION: '20'
+  APP_DIR: /var/www/erpex
+  PM2_APP_NAME: erpex-api
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: 📥 Checkout code
+        uses: actions/checkout@v4
+
+      - name: 📦 Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: 📥 Install dependencies
+        run: npm ci
+
+      - name: 🔨 Build Monorepo (Shared, Backend, Frontend)
+        run: npm run build
+        env:
+          VITE_API_URL: https://www.elevatexnow.com/erpex/api
+
+      - name: 🗂️ Generate Prisma Client
+        run: cd packages/backend && npx prisma generate
+
+      - name: 📦 Prepare deployment package
+        run: |
+          mkdir -p deploy
+          
+          # Frontend static files (built)
+          cp -r packages/frontend/dist deploy/erpex
+          
+          # Recreate package structure for workspace installation
+          mkdir -p deploy/packages/backend
+          cp -r packages/backend/dist deploy/packages/backend/dist
+          cp -r packages/backend/prisma deploy/packages/backend/prisma
+          cp packages/backend/package.json deploy/packages/backend/
+          
+          mkdir -p deploy/packages/shared
+          cp -r packages/shared/src deploy/packages/shared/src
+          cp packages/shared/package.json deploy/packages/shared/
+          
+          mkdir -p deploy/packages/frontend
+          cp packages/frontend/package.json deploy/packages/frontend/
+          
+          # Root configs
+          cp package.json deploy/
+          cp package-lock.json deploy/
+          
+          # Server configs
+          cp ecosystem.config.cjs deploy/
+          cp deploy.sh deploy/
+          cp nginx-erpex.conf deploy/
+
+      - name: 🔑 Setup SSH key
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.VPS_HOST }} >> ~/.ssh/known_hosts 2>/dev/null
+
+      - name: 🚀 Deploy to VPS
+        run: |
+          # Upload deployment package
+          rsync -avz --delete \
+            -e "ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no" \
+            deploy/ \
+            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }}:${{ env.APP_DIR }}/
+
+          # Run deployment script on server
+          ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no \
+            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
+            "cd ${{ env.APP_DIR }} && chmod +x deploy.sh && bash deploy.sh"
+
+      - name: ✅ Verify deployment
+        run: |
+          sleep 5
+          STATUS=$(ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no \
+            ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
+            "curl -s -o /dev/null -w '%{http_code}' http://localhost:3001/api/health" || echo "000")
+          
+          if [ "$STATUS" = "200" ]; then
+            echo "✅ API is healthy (HTTP 200)"
+          else
+            echo "⚠️ API returned HTTP $STATUS — check server logs"
+            ssh -i ~/.ssh/id_rsa -o StrictHostKeyChecking=no \
+              ${{ secrets.VPS_USER }}@${{ secrets.VPS_HOST }} \
+              "cd ${{ env.APP_DIR }} && pm2 logs erpex-api --lines 20 --nostream" || true
+          fi
+
+      - name: 🧹 Cleanup
+        if: always()
+        run: rm -f ~/.ssh/id_rsa

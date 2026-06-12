@@ -15,7 +15,8 @@ export const bankingRoutes = Router();
 // GET /api/banking/statements — List bank statements
 bankingRoutes.get('/statements', async (req, res, next) => {
   try {
-    const statements = await bankingService.listBankStatements(req.query.accountId as string);
+    const companyId = (req as any).companyId as string;
+    const statements = await bankingService.listBankStatements(companyId, req.query.accountId as string);
     res.json({ success: true, data: statements });
   } catch (err) { next(err); }
 });
@@ -49,8 +50,9 @@ bankingRoutes.post('/statements/upload', upload.single('file'), async (req, res,
       return { date: String(date), description: String(desc), reference: String(ref || ''), debit, credit, balance };
     }).filter(l => l.date && l.description);
 
+    const companyId = (req as any).companyId as string;
     const statement = await bankingService.createBankStatement(
-      accountId, req.file.originalname, periodStart, periodEnd, lines
+      companyId, accountId, req.file.originalname, periodStart, periodEnd, lines
     );
 
     res.status(201).json({ success: true, data: statement });
@@ -60,8 +62,10 @@ bankingRoutes.post('/statements/upload', upload.single('file'), async (req, res,
 // GET /api/banking/reconciliation/:accountId — Get reconciliation view
 bankingRoutes.get('/reconciliation/:accountId', async (req, res, next) => {
   try {
+    const companyId = (req as any).companyId as string;
     const view = await bankingService.getReconciliationView(
-      req.params.accountId,
+      companyId,
+      req.params.accountId as string,
       req.query.statementId as string
     );
     res.json({ success: true, data: view });

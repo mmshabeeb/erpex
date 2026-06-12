@@ -11,8 +11,7 @@ import {
   HiOutlineCheckCircle, HiOutlineExclamationCircle,
   HiOutlineX, HiOutlineClock, HiOutlineUserGroup,
 } from 'react-icons/hi';
-
-const API = 'http://localhost:3001/api';
+import { API_BASE as API } from '../../lib/api';
 
 const COUNTRIES = [
   'India', 'United States', 'United Kingdom', 'Canada', 'Australia',

@@ -10,8 +10,9 @@ import type { ICreateTaxConfigPayload, ITaxReportEntry } from '@erpex/shared';
 
 // ─── List Tax Configurations ────────────────────────────────
 
-export async function listTaxConfigs() {
+export async function listTaxConfigs(companyId: string) {
   return prisma.taxConfig.findMany({
+    where: { companyId },
     include: {
       account: { select: { id: true, code: true, name: true } },
     },
@@ -21,13 +22,14 @@ export async function listTaxConfigs() {
 
 // ─── Create Tax Configuration ───────────────────────────────
 
-export async function createTaxConfig(data: ICreateTaxConfigPayload) {
+export async function createTaxConfig(companyId: string, data: ICreateTaxConfigPayload) {
   // Validate the tax account exists
-  const account = await prisma.account.findUnique({ where: { id: data.accountId } });
+  const account = await prisma.account.findFirst({ where: { id: data.accountId, companyId } });
   if (!account) throw new AppError('Tax account not found', 404);
 
   const config = await prisma.taxConfig.create({
     data: {
+      companyId,
       name: data.name,
       taxType: data.taxType as any,
       rate: data.rate,
@@ -41,6 +43,7 @@ export async function createTaxConfig(data: ICreateTaxConfigPayload) {
   });
 
   await createAuditLog({
+    companyId,
     entityType: 'TaxConfig',
     entityId: config.id,
     action: 'CREATED',
@@ -53,10 +56,11 @@ export async function createTaxConfig(data: ICreateTaxConfigPayload) {
 // ─── Update Tax Configuration ───────────────────────────────
 
 export async function updateTaxConfig(
+  companyId: string,
   id: string,
   data: { name?: string; rate?: number; effectiveTo?: string; isActive?: boolean }
 ) {
-  const existing = await prisma.taxConfig.findUnique({ where: { id } });
+  const existing = await prisma.taxConfig.findFirst({ where: { id, companyId } });
   if (!existing) throw new AppError('Tax configuration not found', 404);
 
   const updated = await prisma.taxConfig.update({
@@ -73,6 +77,7 @@ export async function updateTaxConfig(
   });
 
   await createAuditLog({
+    companyId,
     entityType: 'TaxConfig',
     entityId: id,
     action: 'UPDATED',
@@ -85,8 +90,9 @@ export async function updateTaxConfig(
 
 // ─── Tax Summary Report ─────────────────────────────────────
 
-export async function getTaxReport(startDate: string, endDate: string) {
+export async function getTaxReport(companyId: string, startDate: string, endDate: string) {
   const taxConfigs = await prisma.taxConfig.findMany({
+    where: { companyId },
     include: { account: { select: { id: true, code: true, name: true } } },
   });
 
@@ -98,6 +104,7 @@ export async function getTaxReport(startDate: string, endDate: string) {
       where: {
         taxConfigId: config.id,
         journalEntry: {
+          companyId,
           status: 'POSTED',
           date: {
             gte: new Date(startDate),

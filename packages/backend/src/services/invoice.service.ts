@@ -18,11 +18,11 @@ const invoiceInclude = {
   },
 };
 
-export async function listInvoices(filters: {
+export async function listInvoices(companyId: string, filters: {
   contactId?: string; status?: string; search?: string; page?: number; pageSize?: number;
   startDate?: string; endDate?: string;
 }) {
-  const where: any = {};
+  const where: any = { companyId };
   if (filters.contactId) where.contactId = filters.contactId;
   if (filters.status) where.status = filters.status;
   if (filters.search) {
@@ -54,14 +54,14 @@ export async function listInvoices(filters: {
   return { data, total, page, pageSize };
 }
 
-export async function getInvoice(id: string) {
-  const inv = await prisma.invoice.findUnique({ where: { id }, include: invoiceInclude });
+export async function getInvoice(companyId: string, id: string) {
+  const inv = await prisma.invoice.findFirst({ where: { id, companyId }, include: invoiceInclude });
   if (!inv) throw new AppError('Invoice not found', 404);
   return inv;
 }
 
-export async function createInvoice(data: any) {
-  const number = await generateDocNumber('INVOICE', 'invoice');
+export async function createInvoice(companyId: string, data: any) {
+  const number = await generateDocNumber(companyId, 'INVOICE', 'invoice');
   const { lines, discount, ...header } = data;
 
   const lineData = lines.map((l: any, idx: number) => ({
@@ -77,6 +77,7 @@ export async function createInvoice(data: any) {
   const invoice = await prisma.invoice.create({
     data: {
       ...header,
+      companyId,
       number,
       discount: discount || 0,
       subtotal,
@@ -101,9 +102,9 @@ export async function createInvoice(data: any) {
  *   Cr Tax Payable [taxTotal]
  * For PRODUCT items: Dr COGS, Cr Inventory (FIFO)
  */
-export async function postInvoice(id: string) {
-  const inv = await prisma.invoice.findUnique({
-    where: { id },
+export async function postInvoice(companyId: string, id: string) {
+  const inv = await prisma.invoice.findFirst({
+    where: { id, companyId },
     include: {
       lines: { include: { item: true } },
       contact: true,
@@ -113,11 +114,11 @@ export async function postInvoice(id: string) {
   if (inv.status !== 'DRAFT') throw new AppError('Only draft invoices can be posted', 400);
 
   // Find AR account (default: 11200 Accounts Receivable)
-  const arAccount = await prisma.account.findFirst({ where: { code: '11200' } });
+  const arAccount = await prisma.account.findFirst({ where: { code: '11200', companyId } });
   // Find default revenue account (41000 Sales Revenue)
-  const revenueAccount = await prisma.account.findFirst({ where: { code: '41000' } });
+  const revenueAccount = await prisma.account.findFirst({ where: { code: '41000', companyId } });
   // Find GST output account (21300)
-  const taxAccount = await prisma.account.findFirst({ where: { code: '21300' } });
+  const taxAccount = await prisma.account.findFirst({ where: { code: '21300', companyId } });
 
   if (!arAccount || !revenueAccount) {
     throw new AppError('Required accounts (AR, Revenue) not found in COA', 500);
@@ -141,7 +142,7 @@ export async function postInvoice(id: string) {
   for (const line of inv.lines) {
     if (line.item && line.item.type === 'PRODUCT' && line.item.cogsAccountId && line.item.inventoryAccountId) {
       try {
-        const { cogs } = await recordOutMovement({
+        const { cogs } = await recordOutMovement(companyId, {
           itemId: line.item.id,
           date: inv.date,
           qty: line.qty,
@@ -160,9 +161,10 @@ export async function postInvoice(id: string) {
     }
   }
 
-  const voucherNo = await generateVoucherNo('SALES');
+  const voucherNo = await generateVoucherNo(companyId, 'SALES');
   const je = await prisma.journalEntry.create({
     data: {
+      companyId,
       voucherNo,
       date: inv.date,
       type: 'SALES',
@@ -174,35 +176,37 @@ export async function postInvoice(id: string) {
   });
 
   await prisma.invoice.update({
-    where: { id },
+    where: { id, companyId },
     data: { status: 'SENT', journalEntryId: je.id },
   });
 
   await createAuditLog({
+    companyId,
     entityType: 'Invoice',
     entityId: id,
     action: 'POSTED',
     newValue: { number: inv.number, total: inv.total, journalEntryId: je.id },
   });
 
-  return getInvoice(id);
+  return getInvoice(companyId, id);
 }
 
-export async function voidInvoice(id: string) {
-  const inv = await prisma.invoice.findUnique({ where: { id } });
+export async function voidInvoice(companyId: string, id: string) {
+  const inv = await prisma.invoice.findFirst({ where: { id, companyId } });
   if (!inv) throw new AppError('Invoice not found', 404);
   if (inv.amountPaid > 0) throw new AppError('Cannot void an invoice with payments', 400);
 
-  await prisma.invoice.update({ where: { id }, data: { status: 'VOID', amountDue: 0 } });
-  return getInvoice(id);
+  await prisma.invoice.update({ where: { id, companyId }, data: { status: 'VOID', amountDue: 0 } });
+  return getInvoice(companyId, id);
 }
 
 /**
  * Get customer invoices for payment allocation
  */
-export async function getUnpaidInvoices(contactId: string) {
+export async function getUnpaidInvoices(companyId: string, contactId: string) {
   return prisma.invoice.findMany({
     where: {
+      companyId,
       contactId,
       status: { in: ['SENT', 'PARTIALLY_PAID', 'OVERDUE'] },
       amountDue: { gt: 0 },

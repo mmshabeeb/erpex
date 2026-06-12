@@ -31,3 +31,14 @@ packages/backend/prisma/migrations/
 *.log
 npm-debug.log*
 node_modules
+
+# TypeScript Cache
+*.tsbuildinfo
+
+# Compiled TS configuration & scripts
+packages/backend/prisma/seed.js
+packages/backend/prisma/seed.js.map
+packages/backend/prisma/seed.d.ts
+packages/backend/prisma/seed.d.ts.map
+packages/frontend/vite.config.js
+packages/frontend/vite.config.d.ts
