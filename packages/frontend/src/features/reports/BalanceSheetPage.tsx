@@ -6,11 +6,14 @@ import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { reportsApi } from '../../api/client';
 import { formatCurrency, toInputDate } from '../../utils/formatters';
-import { HiOutlineCheck, HiOutlineX } from 'react-icons/hi';
+import { HiOutlineCheck, HiOutlineX, HiOutlineDownload } from 'react-icons/hi';
 import toast from 'react-hot-toast';
+import { exportBalanceSheet } from '../../utils/reportExporter';
+import { useAuth } from '../auth/AuthProvider';
 
 export default function BalanceSheetPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [asOfDate, setAsOfDate] = useState(toInputDate());
@@ -56,11 +59,26 @@ export default function BalanceSheetPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 style={{ fontSize: 'var(--font-size-2xl)', fontWeight: 700 }}>Balance Sheet</h1>
-        {data && (
-          <div className={`report-balanced ${data.isBalanced ? 'is-balanced' : 'not-balanced'}`}>
-            {data.isBalanced ? <><HiOutlineCheck /> Assets = Liabilities + Equity</> : <><HiOutlineX /> Not Balanced!</>}
-          </div>
-        )}
+        <div className="flex items-center gap-3">
+          {data && (
+            <div className={`report-balanced ${data.isBalanced ? 'is-balanced' : 'not-balanced'}`}>
+              {data.isBalanced ? <><HiOutlineCheck /> Assets = Liabilities + Equity</> : <><HiOutlineX /> Not Balanced!</>}
+            </div>
+          )}
+          {data && (
+            <div className="flex gap-2" style={{ marginLeft: 8 }}>
+              <button className="btn btn-ghost btn-sm" onClick={() => exportBalanceSheet(user?.company?.name || 'ERPEX Company', `As of ${asOfDate}`, data, 'xlsx')} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                <HiOutlineDownload /> Excel
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => exportBalanceSheet(user?.company?.name || 'ERPEX Company', `As of ${asOfDate}`, data, 'csv')} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                <HiOutlineDownload /> CSV
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => exportBalanceSheet(user?.company?.name || 'ERPEX Company', `As of ${asOfDate}`, data, 'pdf')} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                <HiOutlineDownload /> PDF
+              </button>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="filter-bar">

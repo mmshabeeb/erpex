@@ -8,9 +8,12 @@ import { reportsApi } from '../../api/client';
 import { formatCurrency, toInputDate } from '../../utils/formatters';
 import { HiOutlineDownload, HiOutlineCheck, HiOutlineX } from 'react-icons/hi';
 import toast from 'react-hot-toast';
+import { exportTrialBalance } from '../../utils/reportExporter';
+import { useAuth } from '../auth/AuthProvider';
 
 export default function TrialBalancePage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [asOfDate, setAsOfDate] = useState(toInputDate());
@@ -33,10 +36,23 @@ export default function TrialBalancePage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 style={{ fontSize: 'var(--font-size-2xl)', fontWeight: 700 }}>Trial Balance</h1>
-        <div className="export-bar">
+        <div className="flex items-center gap-3">
           {data && (
             <div className={`report-balanced ${data.isBalanced ? 'is-balanced' : 'not-balanced'}`}>
               {data.isBalanced ? <><HiOutlineCheck /> Balanced</> : <><HiOutlineX /> Not Balanced</>}
+            </div>
+          )}
+          {data && (
+            <div className="flex gap-2" style={{ marginLeft: 8 }}>
+              <button className="btn btn-ghost btn-sm" onClick={() => exportTrialBalance(user?.company?.name || 'ERPEX Company', `From ${startDate} As of ${asOfDate}`, data, 'xlsx')} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                <HiOutlineDownload /> Excel
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => exportTrialBalance(user?.company?.name || 'ERPEX Company', `From ${startDate} As of ${asOfDate}`, data, 'csv')} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                <HiOutlineDownload /> CSV
+              </button>
+              <button className="btn btn-ghost btn-sm" onClick={() => exportTrialBalance(user?.company?.name || 'ERPEX Company', `From ${startDate} As of ${asOfDate}`, data, 'pdf')} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+                <HiOutlineDownload /> PDF
+              </button>
             </div>
           )}
         </div>

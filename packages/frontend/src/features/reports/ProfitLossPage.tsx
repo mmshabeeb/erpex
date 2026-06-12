@@ -7,9 +7,13 @@ import { useNavigate } from 'react-router-dom';
 import { reportsApi } from '../../api/client';
 import { formatCurrency, toInputDate } from '../../utils/formatters';
 import toast from 'react-hot-toast';
+import { HiOutlineDownload } from 'react-icons/hi';
+import { exportProfitLoss } from '../../utils/reportExporter';
+import { useAuth } from '../auth/AuthProvider';
 
 export default function ProfitLossPage() {
   const navigate = useNavigate();
+  const { user } = useAuth();
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
   const [startDate, setStartDate] = useState('2025-04-01');
@@ -55,6 +59,19 @@ export default function ProfitLossPage() {
     <div>
       <div className="flex items-center justify-between mb-6">
         <h1 style={{ fontSize: 'var(--font-size-2xl)', fontWeight: 700 }}>Profit & Loss Statement</h1>
+        {data && (
+          <div className="flex gap-2">
+            <button className="btn btn-ghost btn-sm" onClick={() => exportProfitLoss(user?.company?.name || 'ERPEX Company', `From ${startDate} to ${endDate}`, data, 'xlsx')} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+              <HiOutlineDownload /> Excel
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={() => exportProfitLoss(user?.company?.name || 'ERPEX Company', `From ${startDate} to ${endDate}`, data, 'csv')} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+              <HiOutlineDownload /> CSV
+            </button>
+            <button className="btn btn-ghost btn-sm" onClick={() => exportProfitLoss(user?.company?.name || 'ERPEX Company', `From ${startDate} to ${endDate}`, data, 'pdf')} style={{ display: 'inline-flex', alignItems: 'center', gap: '4px' }}>
+              <HiOutlineDownload /> PDF
+            </button>
+          </div>
+        )}
       </div>
 
       <div className="filter-bar">
