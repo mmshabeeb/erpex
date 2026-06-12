@@ -27,13 +27,15 @@ function loadEnv() {
                             if ((val.startsWith('"') && val.endsWith('"')) || (val.startsWith("'") && val.endsWith("'"))) {
                                 val = val.slice(1, -1);
                             }
-                            // Set the env variable if not already set by shell
-                            if (!process.env[key]) {
-                                process.env[key] = val;
+                            // Always set the env variable from .env, showing a warning if overriding
+                            if (process.env[key] && process.env[key] !== val) {
+                                console.log(`[ENV] Overriding existing process.env.${key} (was: ${process.env[key]}) with: ${val}`);
                             }
+                            process.env[key] = val;
                         }
                     }
                 }
+                console.log(`[ENV] Final DATABASE_URL: ${process.env.DATABASE_URL}`);
                 // Force Prisma to use only 1 thread to prevent CloudLinux LVE thread exhaustion
                 process.env.PRISMA_QUERY_ENGINE_LIBRARY_THREAD_LIMIT = '1';
                 process.env.PRISMA_QUERY_ENGINE_BINARY_THREAD_LIMIT = '1';
