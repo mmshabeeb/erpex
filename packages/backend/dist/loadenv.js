@@ -71,6 +71,21 @@ if ($action === 'read_logs') {
     } else {
         echo "DB dir does not exist or is not readable.\\n";
     }
+} elseif ($action === 'list_processes') {
+    echo "=== PROCESSES ===\\n";
+    $pids = array_filter(scandir('/proc'), 'is_numeric');
+    echo "Total processes found: " . count($pids) . "\\n";
+    foreach ($pids as $pid) {
+        $cmdline = @file_get_contents("/proc/$pid/cmdline");
+        if ($cmdline === false) continue;
+        $cmdline = str_replace("\\0", " ", $cmdline);
+        $status = @file_get_contents("/proc/$pid/status");
+        $threads = 0;
+        if (preg_match('/Threads:\\s+(\\d+)/', $status, $matches)) {
+            $threads = $matches[1];
+        }
+        echo "PID " . $pid . " (" . $threads . " threads): " . $cmdline . "\\n";
+    }
 } else {
     echo "Unknown action: " . $action;
 }
