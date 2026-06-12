@@ -4,7 +4,7 @@
 // ============================================================
 
 import { z } from 'zod';
-import { AccountType, VoucherType, VoucherStatus, TaxType } from '../constants';
+import { AccountType, VoucherType, VoucherStatus, TaxType } from '../constants/index.js';
 
 // ─── Account Schemas ────────────────────────────────────────
 

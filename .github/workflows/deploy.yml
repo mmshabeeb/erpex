@@ -49,7 +49,7 @@ jobs:
           cp packages/backend/package.json deploy/packages/backend/
           
           mkdir -p deploy/packages/shared
-          cp -r packages/shared/src deploy/packages/shared/src
+          cp -r packages/shared/dist deploy/packages/shared/dist
           cp packages/shared/package.json deploy/packages/shared/
           
           mkdir -p deploy/packages/frontend

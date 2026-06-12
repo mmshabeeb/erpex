@@ -9,7 +9,7 @@ import {
   InvoiceStatus, PurchaseOrderStatus, BillStatus,
   ProjectStatus, ProjectBillingMethod, TimesheetApproval,
   PaymentMethod, InventoryMovementType,
-} from '../constants';
+} from '../constants/index.js';
 
 // ═══════════════════════════════════════════════════════════════
 // MODULE 1: CORE ACCOUNTING
