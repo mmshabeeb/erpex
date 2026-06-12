@@ -1,5 +1,6 @@
 // ============================================================
 // ERPEX — Journal View (Read-only posted view)
+// + Print/Download support
 // ============================================================
 
 import { useState, useEffect } from 'react';
@@ -8,12 +9,17 @@ import { journalsApi } from '../../api/client';
 import { formatCurrency, formatDate } from '../../utils/formatters';
 import { HiOutlineArrowLeft } from 'react-icons/hi';
 import toast from 'react-hot-toast';
+import DocumentViewer from '../shared/DocumentViewer';
+import type { DocumentData } from '../shared/DocumentViewer';
+import { useAuth } from '../auth/AuthProvider';
 
 export default function JournalView() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const [entry, setEntry] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [viewDoc, setViewDoc] = useState<DocumentData | null>(null);
+  const { user } = useAuth();
 
   useEffect(() => { if (id) loadEntry(); }, [id]);
 
@@ -43,6 +49,37 @@ export default function JournalView() {
     } catch (err: any) { toast.error(err.message); }
   }
 
+  function handleViewPrint() {
+    if (!entry) return;
+    const docData: DocumentData = {
+      type: 'JOURNAL_VOUCHER',
+      number: entry.voucherNo,
+      status: entry.status,
+      date: entry.date,
+      company: user?.company ? {
+        name: user.company.name, legalName: user.company.legalName,
+        address: user.company.address, city: user.company.city,
+        state: user.company.state, pinCode: user.company.pinCode,
+        gstin: user.company.gstin, pan: user.company.pan,
+      } : undefined,
+      lines: [],
+      subtotal: 0,
+      taxTotal: 0,
+      total: 0,
+      narration: entry.narration,
+      journalItems: (entry.items || []).map((item: any) => ({
+        accountCode: item.account?.code || '',
+        accountName: item.account?.name || '',
+        narration: item.narration,
+        debit: Number(item.debit) || 0,
+        credit: Number(item.credit) || 0,
+      })),
+      totalDebit: entry.totalDebit || 0,
+      totalCredit: entry.totalCredit || 0,
+    };
+    setViewDoc(docData);
+  }
+
   if (loading) return <div className="loading-spinner"><div className="spinner" /></div>;
   if (!entry) return <div className="empty-state"><div className="empty-state-title">Journal not found</div></div>;
 
@@ -67,6 +104,13 @@ export default function JournalView() {
             <span className={`badge badge-${entry.status.toLowerCase()}`} style={{ fontSize: 'var(--font-size-sm)', padding: '4px 12px' }}>
               {entry.status}
             </span>
+            <button className="btn btn-ghost btn-sm" onClick={handleViewPrint} title="View / Print / Download"
+              style={{ display: 'inline-flex', alignItems: 'center', gap: '0.3rem' }}>
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                <polyline points="6 9 6 2 18 2 18 9" /><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2" /><rect x="6" y="14" width="12" height="8" />
+              </svg>
+              Print
+            </button>
             {entry.status === 'DRAFT' && (
               <button className="btn btn-success btn-sm" onClick={handlePost}>Post Entry</button>
             )}
@@ -138,6 +182,8 @@ export default function JournalView() {
           </table>
         </div>
       </div>
+
+      {viewDoc && <DocumentViewer data={viewDoc} open={true} onClose={() => setViewDoc(null)} />}
     </div>
   );
 }

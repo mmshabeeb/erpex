@@ -13,6 +13,15 @@ interface Company {
   currency: string;
   currencySymbol: string;
   country: string;
+  legalName?: string;
+  address?: string;
+  city?: string;
+  state?: string;
+  pinCode?: string;
+  gstin?: string;
+  pan?: string;
+  phone?: string;
+  email?: string;
 }
 
 interface AuthUser {

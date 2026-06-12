@@ -1,9 +1,13 @@
 // ============================================================
 // ERPEX — Sales Returns / Credit Notes Page
+// + View/Print/Download
 // ============================================================
 
 import { useState, useEffect } from 'react';
 import { creditNotesApi, contactsApi, invoicesApi, itemsApi } from '../../api/client';
+import DocumentViewer, { DocActionButtons } from '../shared/DocumentViewer';
+import type { DocumentData } from '../shared/DocumentViewer';
+import { useAuth } from '../auth/AuthProvider';
 
 const STATUS_COLORS: Record<string, string> = {
   DRAFT: '#94a3b8', APPROVED: '#34d399', VOID: '#6b7280', APPLIED: '#a78bfa',
@@ -22,6 +26,8 @@ export default function SalesReturnsPage() {
   const [form, setForm] = useState({ contactId: '', invoiceId: '', date: new Date().toISOString().slice(0, 10), reason: '' });
   const [lines, setLines] = useState([emptyLine()]);
   const [submitting, setSubmitting] = useState(false);
+  const [viewDoc, setViewDoc] = useState<DocumentData | null>(null);
+  const { user } = useAuth();
 
   useEffect(() => { load(); }, []);
 
@@ -74,6 +80,37 @@ export default function SalesReturnsPage() {
       load();
     } catch (e: any) { alert(e.message); }
     setSubmitting(false);
+  }
+
+  function handleView(cn: any) {
+    const docData: DocumentData = {
+      type: 'CREDIT_NOTE',
+      number: cn.number,
+      status: cn.status,
+      date: cn.date,
+      company: user?.company ? {
+        name: user.company.name, legalName: user.company.legalName,
+        address: user.company.address, city: user.company.city,
+        state: user.company.state, pinCode: user.company.pinCode,
+        gstin: user.company.gstin, pan: user.company.pan,
+      } : undefined,
+      contact: cn.contact ? {
+        name: cn.contact.name, address: cn.contact.address,
+        city: cn.contact.city, state: cn.contact.state,
+        gstin: cn.contact.gstin, pan: cn.contact.pan,
+        phone: cn.contact.phone, email: cn.contact.email,
+      } : undefined,
+      lines: (cn.lines || []).map((l: any) => ({
+        description: l.description || l.item?.name || '',
+        itemName: l.item?.name, qty: l.qty, rate: l.rate,
+        amount: l.amount, taxAmount: l.taxAmount || 0,
+      })),
+      subtotal: cn.subtotal || 0, taxTotal: cn.taxTotal || 0,
+      total: cn.total || 0,
+      notes: cn.reason,
+      referenceNo: cn.invoice?.number,
+    };
+    setViewDoc(docData);
   }
 
   const fmt = (n: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 }).format(n);
@@ -166,11 +203,11 @@ export default function SalesReturnsPage() {
       <div className="card">
         <table className="data-table">
           <thead>
-            <tr><th>Credit Note #</th><th>Customer</th><th>Invoice</th><th>Date</th><th>Reason</th><th>Status</th><th style={{textAlign:'right'}}>Total</th><th style={{textAlign:'right'}}>Balance</th></tr>
+            <tr><th>Credit Note #</th><th>Customer</th><th>Invoice</th><th>Date</th><th>Reason</th><th>Status</th><th style={{textAlign:'right'}}>Total</th><th style={{textAlign:'right'}}>Balance</th><th>Actions</th></tr>
           </thead>
           <tbody>
-            {loading ? <tr><td colSpan={8} style={{textAlign:'center',padding:'2rem',color:'var(--text-muted)'}}>Loading...</td></tr> :
-            creditNotes.length === 0 ? <tr><td colSpan={8} style={{textAlign:'center',padding:'2rem',color:'var(--text-muted)'}}>No credit notes issued</td></tr> :
+            {loading ? <tr><td colSpan={9} style={{textAlign:'center',padding:'2rem',color:'var(--text-muted)'}}>Loading...</td></tr> :
+            creditNotes.length === 0 ? <tr><td colSpan={9} style={{textAlign:'center',padding:'2rem',color:'var(--text-muted)'}}>No credit notes issued</td></tr> :
             creditNotes.map(cn => (
               <tr key={cn.id}>
                 <td><code style={{ background: 'var(--bg-tertiary)', padding: '0.15rem 0.5rem', borderRadius: 4, fontWeight: 600, fontSize: '0.85rem' }}>{cn.number}</code></td>
@@ -181,11 +218,14 @@ export default function SalesReturnsPage() {
                 <td><span className="status-badge" style={{ background: (STATUS_COLORS[cn.status] || '#94a3b8') + '22', color: STATUS_COLORS[cn.status], border: `1px solid ${STATUS_COLORS[cn.status]}44` }}>{cn.status}</span></td>
                 <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 600, color: 'var(--color-rose)' }}>-{fmt(cn.total)}</td>
                 <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)' }}>{fmt(cn.balanceAmount || 0)}</td>
+                <td><DocActionButtons onView={() => handleView(cn)} /></td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      {viewDoc && <DocumentViewer data={viewDoc} open={true} onClose={() => setViewDoc(null)} />}
     </div>
   );
 }

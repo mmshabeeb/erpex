@@ -1,9 +1,13 @@
 // ============================================================
 // ERPEX — Expenses Page with Create Expense form
+// + View/Print/Download
 // ============================================================
 
 import { useState, useEffect } from 'react';
 import { expensesApi, contactsApi, accountsApi } from '../../api/client';
+import DocumentViewer, { DocActionButtons } from '../shared/DocumentViewer';
+import type { DocumentData } from '../shared/DocumentViewer';
+import { useAuth } from '../auth/AuthProvider';
 
 export default function ExpensesPage() {
   const [expenses, setExpenses] = useState<any[]>([]);
@@ -18,6 +22,8 @@ export default function ExpensesPage() {
     isBillable: false, category: '',
   });
   const [submitting, setSubmitting] = useState(false);
+  const [viewDoc, setViewDoc] = useState<DocumentData | null>(null);
+  const { user } = useAuth();
 
   useEffect(() => { load(); }, []);
 
@@ -52,6 +58,39 @@ export default function ExpensesPage() {
       load();
     } catch (e: any) { alert(e.message); }
     setSubmitting(false);
+  }
+
+  function handleView(exp: any) {
+    const docData: DocumentData = {
+      type: 'EXPENSE',
+      number: exp.referenceNo || `EXP-${exp.id?.slice(0, 8).toUpperCase() || '0000'}`,
+      status: exp.isBillable ? 'BILLABLE' : 'RECORDED',
+      date: exp.date,
+      company: user?.company ? {
+        name: user.company.name, legalName: user.company.legalName,
+        address: user.company.address, city: user.company.city,
+        state: user.company.state, pinCode: user.company.pinCode,
+        gstin: user.company.gstin, pan: user.company.pan,
+      } : undefined,
+      contact: exp.contact ? {
+        name: exp.contact.name, address: exp.contact.address,
+        city: exp.contact.city, state: exp.contact.state,
+      } : undefined,
+      lines: [{
+        description: exp.description || 'Expense',
+        qty: 1,
+        rate: exp.amount,
+        amount: exp.amount,
+        taxAmount: 0,
+      }],
+      subtotal: exp.amount,
+      taxTotal: 0,
+      total: exp.amount,
+      paymentMethod: exp.paymentMethod,
+      category: exp.category,
+      referenceNo: exp.referenceNo,
+    };
+    setViewDoc(docData);
   }
 
   const fmt = (n: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 }).format(n);
@@ -140,11 +179,11 @@ export default function ExpensesPage() {
       <div className="card">
         <table className="data-table">
           <thead>
-            <tr><th>Date</th><th>Description</th><th>Account</th><th>Vendor</th><th>Method</th><th>Category</th><th>Billable</th><th style={{textAlign:'right'}}>Amount</th></tr>
+            <tr><th>Date</th><th>Description</th><th>Account</th><th>Vendor</th><th>Method</th><th>Category</th><th>Billable</th><th style={{textAlign:'right'}}>Amount</th><th>Actions</th></tr>
           </thead>
           <tbody>
-            {loading ? <tr><td colSpan={8} style={{textAlign:'center',padding:'2rem',color:'var(--text-muted)'}}>Loading...</td></tr> :
-            expenses.length === 0 ? <tr><td colSpan={8} style={{textAlign:'center',padding:'2rem',color:'var(--text-muted)'}}>No expenses recorded</td></tr> :
+            {loading ? <tr><td colSpan={9} style={{textAlign:'center',padding:'2rem',color:'var(--text-muted)'}}>Loading...</td></tr> :
+            expenses.length === 0 ? <tr><td colSpan={9} style={{textAlign:'center',padding:'2rem',color:'var(--text-muted)'}}>No expenses recorded</td></tr> :
             expenses.map(exp => (
               <tr key={exp.id}>
                 <td style={{ fontSize: '0.85rem' }}>{fmtDate(exp.date)}</td>
@@ -155,11 +194,14 @@ export default function ExpensesPage() {
                 <td style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{exp.category || '—'}</td>
                 <td>{exp.isBillable ? <span style={{color:'var(--color-amber)'}}>● Billable</span> : '—'}</td>
                 <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{fmt(exp.amount)}</td>
+                <td><DocActionButtons onView={() => handleView(exp)} /></td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      {viewDoc && <DocumentViewer data={viewDoc} open={true} onClose={() => setViewDoc(null)} />}
     </div>
   );
 }

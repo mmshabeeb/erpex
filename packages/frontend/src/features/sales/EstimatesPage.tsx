@@ -1,10 +1,13 @@
 // ============================================================
 // ERPEX — Estimates Page (Quotes/Proposals)
-// With dedicated Create Estimate form
+// With dedicated Create Estimate form + View/Print/Download
 // ============================================================
 
 import { useState, useEffect } from 'react';
 import { estimatesApi, contactsApi, itemsApi } from '../../api/client';
+import DocumentViewer, { DocActionButtons } from '../shared/DocumentViewer';
+import type { DocumentData } from '../shared/DocumentViewer';
+import { useAuth } from '../auth/AuthProvider';
 
 const STATUS_COLORS: Record<string, string> = {
   DRAFT: '#94a3b8', SENT: '#60a5fa', ACCEPTED: '#34d399', DECLINED: '#f87171', INVOICED: '#a78bfa',
@@ -22,6 +25,8 @@ export default function EstimatesPage() {
   const [form, setForm] = useState({ contactId: '', date: new Date().toISOString().slice(0, 10), expiryDate: '', notes: '' });
   const [lines, setLines] = useState([emptyLine()]);
   const [submitting, setSubmitting] = useState(false);
+  const [viewDoc, setViewDoc] = useState<DocumentData | null>(null);
+  const { user } = useAuth();
 
   useEffect(() => { load(); }, []);
 
@@ -82,6 +87,38 @@ export default function EstimatesPage() {
 
   async function handleStatus(id: string, status: string) {
     try { await estimatesApi.updateStatus(id, status); load(); } catch (e: any) { alert(e.message); }
+  }
+
+  function handleView(est: any) {
+    const docData: DocumentData = {
+      type: 'ESTIMATE',
+      number: est.number,
+      status: est.status,
+      date: est.date,
+      dueDate: est.expiryDate,
+      company: user?.company ? {
+        name: user.company.name, legalName: user.company.legalName,
+        address: user.company.address, city: user.company.city,
+        state: user.company.state, pinCode: user.company.pinCode,
+        gstin: user.company.gstin, pan: user.company.pan,
+      } : undefined,
+      contact: est.contact ? {
+        name: est.contact.name, address: est.contact.address,
+        city: est.contact.city, state: est.contact.state,
+        gstin: est.contact.gstin, pan: est.contact.pan,
+        phone: est.contact.phone, email: est.contact.email,
+      } : undefined,
+      lines: (est.lines || []).map((l: any) => ({
+        description: l.description || l.item?.name || '',
+        itemName: l.item?.name, qty: l.qty, rate: l.rate,
+        amount: l.amount, taxAmount: l.taxAmount || 0,
+        hsnCode: l.item?.hsnCode, sacCode: l.item?.sacCode,
+      })),
+      subtotal: est.subtotal || 0, taxTotal: est.taxTotal || 0,
+      discount: est.discount || 0, total: est.total || 0,
+      notes: est.notes,
+    };
+    setViewDoc(docData);
   }
 
   const fmt = (n: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 }).format(n);
@@ -178,19 +215,24 @@ export default function EstimatesPage() {
                 <td style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{est.expiryDate ? fmtDate(est.expiryDate) : '—'}</td>
                 <td><span className="status-badge" style={{ background: (STATUS_COLORS[est.status] || '#94a3b8') + '22', color: STATUS_COLORS[est.status], border: `1px solid ${STATUS_COLORS[est.status]}44` }}>{est.status}</span></td>
                 <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{fmt(est.total)}</td>
-                <td style={{ display: 'flex', gap: '0.25rem' }}>
-                  {est.status === 'DRAFT' && <button className="btn btn-ghost" style={{fontSize:'0.7rem',padding:'0.2rem 0.4rem'}} onClick={() => handleStatus(est.id, 'SENT')}>Send</button>}
-                  {est.status === 'SENT' && <>
-                    <button className="btn btn-ghost" style={{fontSize:'0.7rem',padding:'0.2rem 0.4rem',color:'var(--color-emerald)'}} onClick={() => handleStatus(est.id, 'ACCEPTED')}>Accept</button>
-                    <button className="btn btn-ghost" style={{fontSize:'0.7rem',padding:'0.2rem 0.4rem',color:'var(--color-rose)'}} onClick={() => handleStatus(est.id, 'DECLINED')}>Decline</button>
-                  </>}
-                  {est.status === 'ACCEPTED' && <button className="btn btn-primary" style={{fontSize:'0.7rem',padding:'0.2rem 0.5rem'}} onClick={() => handleConvert(est.id)}>→ Invoice</button>}
+                <td>
+                  <div style={{ display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
+                    <DocActionButtons onView={() => handleView(est)} />
+                    {est.status === 'DRAFT' && <button className="btn btn-ghost" style={{fontSize:'0.7rem',padding:'0.2rem 0.4rem'}} onClick={() => handleStatus(est.id, 'SENT')}>Send</button>}
+                    {est.status === 'SENT' && <>
+                      <button className="btn btn-ghost" style={{fontSize:'0.7rem',padding:'0.2rem 0.4rem',color:'var(--color-emerald)'}} onClick={() => handleStatus(est.id, 'ACCEPTED')}>Accept</button>
+                      <button className="btn btn-ghost" style={{fontSize:'0.7rem',padding:'0.2rem 0.4rem',color:'var(--color-rose)'}} onClick={() => handleStatus(est.id, 'DECLINED')}>Decline</button>
+                    </>}
+                    {est.status === 'ACCEPTED' && <button className="btn btn-primary" style={{fontSize:'0.7rem',padding:'0.2rem 0.5rem'}} onClick={() => handleConvert(est.id)}>→ Invoice</button>}
+                  </div>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      {viewDoc && <DocumentViewer data={viewDoc} open={true} onClose={() => setViewDoc(null)} />}
     </div>
   );
 }

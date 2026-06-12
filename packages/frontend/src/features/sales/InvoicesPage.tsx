@@ -1,10 +1,13 @@
 // ============================================================
 // ERPEX — Invoices Page (Sales / Accounts Receivable)
-// With dedicated Create Invoice form
+// With dedicated Create Invoice form + View/Print/Download
 // ============================================================
 
 import { useState, useEffect } from 'react';
 import { invoicesApi, contactsApi, itemsApi } from '../../api/client';
+import DocumentViewer, { DocActionButtons } from '../shared/DocumentViewer';
+import type { DocumentData } from '../shared/DocumentViewer';
+import { useAuth } from '../auth/AuthProvider';
 
 const STATUS_COLORS: Record<string, string> = {
   DRAFT: '#94a3b8', SENT: '#60a5fa', PARTIALLY_PAID: '#fbbf24', PAID: '#34d399', OVERDUE: '#f87171', VOID: '#6b7280',
@@ -23,6 +26,8 @@ export default function InvoicesPage() {
   const [form, setForm] = useState({ contactId: '', date: new Date().toISOString().slice(0, 10), dueDate: '', notes: '' });
   const [lines, setLines] = useState([emptyLine()]);
   const [submitting, setSubmitting] = useState(false);
+  const [viewDoc, setViewDoc] = useState<DocumentData | null>(null);
+  const { user } = useAuth();
 
   useEffect(() => { load(); }, [statusFilter]);
 
@@ -86,6 +91,57 @@ export default function InvoicesPage() {
   async function handlePost(id: string) {
     if (!confirm('Post this invoice? This will create journal entries and deduct inventory.')) return;
     try { await invoicesApi.post(id); load(); } catch (e: any) { alert(e.message); }
+  }
+
+  function handleView(inv: any) {
+    const docData: DocumentData = {
+      type: 'INVOICE',
+      number: inv.number,
+      status: inv.status,
+      date: inv.date,
+      dueDate: inv.dueDate,
+      company: user?.company ? {
+        name: user.company.name,
+        legalName: user.company.legalName,
+        address: user.company.address,
+        city: user.company.city,
+        state: user.company.state,
+        pinCode: user.company.pinCode,
+        gstin: user.company.gstin,
+        pan: user.company.pan,
+      } : undefined,
+      contact: inv.contact ? {
+        name: inv.contact.name,
+        address: inv.contact.address,
+        city: inv.contact.city,
+        state: inv.contact.state,
+        gstin: inv.contact.gstin,
+        pan: inv.contact.pan,
+        phone: inv.contact.phone,
+        email: inv.contact.email,
+      } : undefined,
+      lines: (inv.lines || []).map((l: any) => ({
+        description: l.description || l.item?.name || '',
+        itemName: l.item?.name,
+        qty: l.qty,
+        rate: l.rate,
+        amount: l.amount,
+        taxAmount: l.taxAmount || 0,
+        hsnCode: l.item?.hsnCode,
+        sacCode: l.item?.sacCode,
+      })),
+      subtotal: inv.subtotal || 0,
+      taxTotal: inv.taxTotal || 0,
+      discount: inv.discount || 0,
+      total: inv.total || 0,
+      amountPaid: inv.amountPaid || 0,
+      amountDue: inv.amountDue || 0,
+      notes: inv.notes,
+      placeOfSupply: inv.placeOfSupply,
+      isReverseCharge: inv.isReverseCharge,
+      irnNumber: inv.irnNumber,
+    };
+    setViewDoc(docData);
   }
 
   const fmt = (n: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 }).format(n);
@@ -206,13 +262,20 @@ export default function InvoicesPage() {
                 <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{fmt(inv.total)}</td>
                 <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', color: inv.amountDue > 0 ? 'var(--color-rose)' : 'var(--color-emerald)' }}>{fmt(inv.amountDue)}</td>
                 <td>
-                  {inv.status === 'DRAFT' && <button className="btn btn-ghost" style={{fontSize:'0.75rem',padding:'0.25rem 0.5rem'}} onClick={() => handlePost(inv.id)}>Post</button>}
+                  <div style={{ display: 'flex', gap: '2px', alignItems: 'center' }}>
+                    <DocActionButtons onView={() => handleView(inv)} />
+                    {inv.status === 'DRAFT' && <button className="btn btn-ghost" style={{fontSize:'0.75rem',padding:'0.25rem 0.5rem'}} onClick={() => handlePost(inv.id)}>Post</button>}
+                  </div>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      {viewDoc && (
+        <DocumentViewer data={viewDoc} open={true} onClose={() => setViewDoc(null)} />
+      )}
     </div>
   );
 }

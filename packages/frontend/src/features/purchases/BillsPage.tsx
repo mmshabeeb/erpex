@@ -1,9 +1,13 @@
 // ============================================================
 // ERPEX — Bills Page (Accounts Payable) with Create Bill form
+// + View/Print/Download
 // ============================================================
 
 import { useState, useEffect } from 'react';
 import { billsApi, contactsApi, itemsApi } from '../../api/client';
+import DocumentViewer, { DocActionButtons } from '../shared/DocumentViewer';
+import type { DocumentData } from '../shared/DocumentViewer';
+import { useAuth } from '../auth/AuthProvider';
 
 const STATUS_COLORS: Record<string, string> = {
   DRAFT: '#94a3b8', RECEIVED: '#60a5fa', PARTIALLY_PAID: '#fbbf24', PAID: '#34d399', OVERDUE: '#f87171',
@@ -22,6 +26,8 @@ export default function BillsPage() {
   const [form, setForm] = useState({ contactId: '', date: new Date().toISOString().slice(0, 10), dueDate: '', billNo: '', notes: '' });
   const [lines, setLines] = useState([emptyLine()]);
   const [submitting, setSubmitting] = useState(false);
+  const [viewDoc, setViewDoc] = useState<DocumentData | null>(null);
+  const { user } = useAuth();
 
   useEffect(() => { load(); }, [statusFilter]);
 
@@ -79,6 +85,40 @@ export default function BillsPage() {
   async function handlePost(id: string) {
     if (!confirm('Post this bill? This will create journal entries and add inventory.')) return;
     try { await billsApi.post(id); load(); } catch (e: any) { alert(e.message); }
+  }
+
+  function handleView(bill: any) {
+    const docData: DocumentData = {
+      type: 'BILL',
+      number: bill.number,
+      status: bill.status,
+      date: bill.date,
+      dueDate: bill.dueDate,
+      company: user?.company ? {
+        name: user.company.name, legalName: user.company.legalName,
+        address: user.company.address, city: user.company.city,
+        state: user.company.state, pinCode: user.company.pinCode,
+        gstin: user.company.gstin, pan: user.company.pan,
+      } : undefined,
+      contact: bill.contact ? {
+        name: bill.contact.name, address: bill.contact.address,
+        city: bill.contact.city, state: bill.contact.state,
+        gstin: bill.contact.gstin, pan: bill.contact.pan,
+        phone: bill.contact.phone, email: bill.contact.email,
+      } : undefined,
+      lines: (bill.lines || []).map((l: any) => ({
+        description: l.description || l.item?.name || '',
+        itemName: l.item?.name, qty: l.qty, rate: l.rate,
+        amount: l.amount, taxAmount: l.taxAmount || 0,
+        hsnCode: l.item?.hsnCode, sacCode: l.item?.sacCode,
+      })),
+      subtotal: bill.subtotal || 0, taxTotal: bill.taxTotal || 0,
+      discount: bill.discount || 0, total: bill.total || 0,
+      amountPaid: bill.amountPaid || 0, amountDue: bill.amountDue || 0,
+      notes: bill.notes, referenceNo: bill.billNo,
+      placeOfSupply: bill.placeOfSupply, isReverseCharge: bill.isReverseCharge,
+    };
+    setViewDoc(docData);
   }
 
   const fmt = (n: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 }).format(n);
@@ -192,13 +232,18 @@ export default function BillsPage() {
                 <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{fmt(bill.total)}</td>
                 <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', color: bill.amountDue > 0 ? 'var(--color-rose)' : 'var(--color-emerald)' }}>{fmt(bill.amountDue)}</td>
                 <td>
-                  {bill.status === 'DRAFT' && <button className="btn btn-ghost" style={{fontSize:'0.75rem',padding:'0.25rem 0.5rem'}} onClick={() => handlePost(bill.id)}>Post</button>}
+                  <div style={{ display: 'flex', gap: '2px', alignItems: 'center' }}>
+                    <DocActionButtons onView={() => handleView(bill)} />
+                    {bill.status === 'DRAFT' && <button className="btn btn-ghost" style={{fontSize:'0.75rem',padding:'0.25rem 0.5rem'}} onClick={() => handlePost(bill.id)}>Post</button>}
+                  </div>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      {viewDoc && <DocumentViewer data={viewDoc} open={true} onClose={() => setViewDoc(null)} />}
     </div>
   );
 }

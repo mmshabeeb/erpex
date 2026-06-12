@@ -1,10 +1,13 @@
 // ============================================================
 // ERPEX — Purchase Orders Page
-// With dedicated Create PO form
+// With dedicated Create PO form + View/Print/Download
 // ============================================================
 
 import { useState, useEffect } from 'react';
 import { purchaseOrdersApi, contactsApi, itemsApi } from '../../api/client';
+import DocumentViewer, { DocActionButtons } from '../shared/DocumentViewer';
+import type { DocumentData } from '../shared/DocumentViewer';
+import { useAuth } from '../auth/AuthProvider';
 
 const STATUS_COLORS: Record<string, string> = {
   DRAFT: '#94a3b8', ISSUED: '#60a5fa', PARTIALLY_RECEIVED: '#fbbf24', RECEIVED: '#34d399', CANCELLED: '#6b7280',
@@ -22,6 +25,8 @@ export default function PurchaseOrdersPage() {
   const [form, setForm] = useState({ contactId: '', date: new Date().toISOString().slice(0, 10), expectedDelivery: '', notes: '' });
   const [lines, setLines] = useState([emptyLine()]);
   const [submitting, setSubmitting] = useState(false);
+  const [viewDoc, setViewDoc] = useState<DocumentData | null>(null);
+  const { user } = useAuth();
 
   useEffect(() => { load(); }, []);
 
@@ -82,6 +87,38 @@ export default function PurchaseOrdersPage() {
 
   async function handleStatus(id: string, status: string) {
     try { await purchaseOrdersApi.updateStatus(id, status); load(); } catch (e: any) { alert(e.message); }
+  }
+
+  function handleView(po: any) {
+    const docData: DocumentData = {
+      type: 'PURCHASE_ORDER',
+      number: po.number,
+      status: po.status,
+      date: po.date,
+      dueDate: po.expectedDelivery,
+      company: user?.company ? {
+        name: user.company.name, legalName: user.company.legalName,
+        address: user.company.address, city: user.company.city,
+        state: user.company.state, pinCode: user.company.pinCode,
+        gstin: user.company.gstin, pan: user.company.pan,
+      } : undefined,
+      contact: po.contact ? {
+        name: po.contact.name, address: po.contact.address,
+        city: po.contact.city, state: po.contact.state,
+        gstin: po.contact.gstin, pan: po.contact.pan,
+        phone: po.contact.phone, email: po.contact.email,
+      } : undefined,
+      lines: (po.lines || []).map((l: any) => ({
+        description: l.description || l.item?.name || '',
+        itemName: l.item?.name, qty: l.qty, rate: l.rate,
+        amount: l.amount, taxAmount: l.taxAmount || 0,
+        hsnCode: l.item?.hsnCode, sacCode: l.item?.sacCode,
+      })),
+      subtotal: po.subtotal || 0, taxTotal: po.taxTotal || 0,
+      discount: po.discount || 0, total: po.total || 0,
+      notes: po.notes,
+    };
+    setViewDoc(docData);
   }
 
   const fmt = (n: number) => new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', minimumFractionDigits: 0 }).format(n);
@@ -178,15 +215,20 @@ export default function PurchaseOrdersPage() {
                 <td style={{ fontSize: '0.85rem', color: 'var(--text-secondary)' }}>{po.expectedDelivery ? fmtDate(po.expectedDelivery) : '—'}</td>
                 <td><span className="status-badge" style={{ background: (STATUS_COLORS[po.status] || '#94a3b8') + '22', color: STATUS_COLORS[po.status], border: `1px solid ${STATUS_COLORS[po.status]}44` }}>{po.status.replace('_', ' ')}</span></td>
                 <td style={{ textAlign: 'right', fontFamily: 'var(--font-mono)', fontWeight: 600 }}>{fmt(po.total)}</td>
-                <td style={{ display: 'flex', gap: '0.25rem' }}>
-                  {po.status === 'DRAFT' && <button className="btn btn-ghost" style={{fontSize:'0.7rem',padding:'0.2rem 0.4rem'}} onClick={() => handleStatus(po.id, 'ISSUED')}>Issue</button>}
-                  {po.status === 'ISSUED' && <button className="btn btn-primary" style={{fontSize:'0.7rem',padding:'0.2rem 0.5rem'}} onClick={() => handleConvert(po.id)}>→ Bill</button>}
+                <td>
+                  <div style={{ display: 'flex', gap: '0.25rem', alignItems: 'center' }}>
+                    <DocActionButtons onView={() => handleView(po)} />
+                    {po.status === 'DRAFT' && <button className="btn btn-ghost" style={{fontSize:'0.7rem',padding:'0.2rem 0.4rem'}} onClick={() => handleStatus(po.id, 'ISSUED')}>Issue</button>}
+                    {po.status === 'ISSUED' && <button className="btn btn-primary" style={{fontSize:'0.7rem',padding:'0.2rem 0.5rem'}} onClick={() => handleConvert(po.id)}>→ Bill</button>}
+                  </div>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       </div>
+
+      {viewDoc && <DocumentViewer data={viewDoc} open={true} onClose={() => setViewDoc(null)} />}
     </div>
   );
 }
