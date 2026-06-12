@@ -76,7 +76,7 @@ if (typeof window !== 'undefined') {
     const url = typeof input === 'string' ? input : input instanceof URL ? input.toString() : input.url;
     
     // Only inject auth for our API calls (both absolute and relative paths)
-    if (url.includes('/api/') && (url.includes('localhost:3001') || url.startsWith('/api/') || url.startsWith('http://localhost:3001'))) {
+    if (url.includes('/api/') && (url.includes('localhost:3001') || url.startsWith('/api/') || url.startsWith('/erpex/api/') || url.startsWith('http://localhost:3001'))) {
       init = init || {};
       const token = localStorage.getItem('erpx_token');
       if (token) {

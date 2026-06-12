@@ -45,7 +45,19 @@ import { projectRoutes, timesheetRoutes } from './routes/projects.js';
 const app = express();
 
 // ─── Middleware ──────────────────────────────────────────────
-app.use(cors({ origin: ['http://localhost:5173', 'http://localhost:3000'], credentials: true }));
+const allowedOrigins = process.env.NODE_ENV === 'production'
+  ? ['https://mizusubeauty.com', 'https://www.mizusubeauty.com', 'https://elevatexnow.com', 'https://www.elevatexnow.com']
+  : ['http://localhost:5173', 'http://localhost:3000'];
+
+app.use(cors({
+  origin: (origin, callback) => {
+    // Allow requests with no origin (e.g. same-origin, server-to-server)
+    if (!origin) return callback(null, true);
+    if (allowedOrigins.includes(origin)) return callback(null, true);
+    callback(null, true); // Allow all in development-like scenarios
+  },
+  credentials: true,
+}));
 app.use(express.json({ limit: '10mb' }));
 app.use(express.urlencoded({ extended: true }));
 
