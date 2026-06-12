@@ -1,0 +1,167 @@
+// ============================================================
+// ERPEX — Auth Provider
+// React Context for authentication state management
+// ============================================================
+
+import React, { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+
+const API_BASE = 'http://localhost:3001/api';
+
+interface Company {
+  id: string;
+  name: string;
+  slug: string;
+  currency: string;
+  currencySymbol: string;
+  country: string;
+}
+
+interface AuthUser {
+  id: string;
+  name: string;
+  email: string;
+  type: 'super_admin' | 'user';
+  role?: string;
+  company?: Company;
+}
+
+interface AuthContextType {
+  user: AuthUser | null;
+  token: string | null;
+  isLoading: boolean;
+  isAuthenticated: boolean;
+  isSuperAdmin: boolean;
+  login: (email: string, password: string, type: 'super_admin' | 'user', companySlug?: string) => Promise<any>;
+  logout: () => void;
+  getAuthHeaders: () => Record<string, string>;
+}
+
+const AuthContext = createContext<AuthContextType | null>(null);
+
+export function useAuth() {
+  const context = useContext(AuthContext);
+  if (!context) throw new Error('useAuth must be used within AuthProvider');
+  return context;
+}
+
+export function AuthProvider({ children }: { children: ReactNode }) {
+  const [user, setUser] = useState<AuthUser | null>(null);
+  const [token, setToken] = useState<string | null>(localStorage.getItem('erpx_token'));
+  const [isLoading, setIsLoading] = useState(true);
+
+  // On mount, verify stored token
+  useEffect(() => {
+    if (token) {
+      verifyToken(token);
+    } else {
+      setIsLoading(false);
+    }
+  }, []);
+
+  async function verifyToken(t: string) {
+    try {
+      const res = await fetch(`${API_BASE}/auth/me`, {
+        headers: { Authorization: `Bearer ${t}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setUser(data);
+        setToken(t);
+      } else {
+        // Token expired
+        localStorage.removeItem('erpx_token');
+        localStorage.removeItem('erpx_refresh');
+        setToken(null);
+        setUser(null);
+      }
+    } catch {
+      localStorage.removeItem('erpx_token');
+      setToken(null);
+      setUser(null);
+    }
+    setIsLoading(false);
+  }
+
+  async function login(email: string, password: string, type: 'super_admin' | 'user', companySlug?: string) {
+    const endpoint = type === 'super_admin' ? '/auth/super-admin/login' : '/auth/login';
+    const body: any = { email, password };
+    if (companySlug) body.companySlug = companySlug;
+
+    const res = await fetch(`${API_BASE}${endpoint}`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Login failed');
+
+    // Multi-company selection needed
+    if (data.requireCompanySelection) {
+      return data; // Return companies list for selection
+    }
+
+    // Store tokens
+    localStorage.setItem('erpx_token', data.token);
+    if (data.refreshToken) {
+      localStorage.setItem('erpx_refresh', data.refreshToken);
+    }
+    setToken(data.token);
+    setUser(data.user);
+
+    return data;
+  }
+
+  function logout() {
+    localStorage.removeItem('erpx_token');
+    localStorage.removeItem('erpx_refresh');
+    setToken(null);
+    setUser(null);
+  }
+
+  function getAuthHeaders(): Record<string, string> {
+    return token ? { Authorization: `Bearer ${token}` } : {};
+  }
+
+  return (
+    <AuthContext.Provider
+      value={{
+        user,
+        token,
+        isLoading,
+        isAuthenticated: !!user,
+        isSuperAdmin: user?.type === 'super_admin',
+        login,
+        logout,
+        getAuthHeaders,
+      }}
+    >
+      {children}
+    </AuthContext.Provider>
+  );
+}
+
+// Protected Route Component
+export function ProtectedRoute({ children, requireSuperAdmin = false }: { children: ReactNode; requireSuperAdmin?: boolean }) {
+  const { isAuthenticated, isLoading, isSuperAdmin } = useAuth();
+
+  if (isLoading) {
+    return (
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', minHeight: '100vh', background: 'var(--color-bg-primary)' }}>
+        <div className="spinner" />
+      </div>
+    );
+  }
+
+  if (!isAuthenticated) {
+    window.location.href = '/login';
+    return null;
+  }
+
+  if (requireSuperAdmin && !isSuperAdmin) {
+    window.location.href = '/';
+    return null;
+  }
+
+  return <>{children}</>;
+}
