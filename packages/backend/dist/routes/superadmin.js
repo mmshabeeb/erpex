@@ -1,0 +1,195 @@
+// ============================================================
+// ERPEX — Super Admin Routes
+// Company management, user management, subscription management
+// ============================================================
+import { Router } from 'express';
+import { companyService } from '../services/company.service.js';
+import { subscriptionService } from '../services/subscription.service.js';
+import { userService } from '../services/user.service.js';
+import { authService } from '../services/auth.service.js';
+const router = Router();
+// ─── Companies ──────────────────────────────────────────────
+// GET /api/super-admin/companies
+router.get('/companies', async (_req, res) => {
+    try {
+        const companies = await companyService.listCompanies();
+        res.json(companies);
+    }
+    catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+// POST /api/super-admin/companies
+router.post('/companies', async (req, res) => {
+    try {
+        const result = await companyService.createCompany(req.body);
+        res.status(201).json(result);
+    }
+    catch (err) {
+        res.status(400).json({ error: err.message });
+    }
+});
+// GET /api/super-admin/companies/:id
+router.get('/companies/:id', async (req, res) => {
+    try {
+        const company = await companyService.getCompany(req.params.id);
+        if (!company) {
+            res.status(404).json({ error: 'Company not found' });
+            return;
+        }
+        res.json(company);
+    }
+    catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+// POST /api/super-admin/companies/:id/impersonate
+router.post('/companies/:id/impersonate', async (req, res) => {
+    try {
+        const result = await authService.impersonateCompany(req.params.id);
+        res.json(result);
+    }
+    catch (err) {
+        res.status(400).json({ error: err.message });
+    }
+});
+// PATCH /api/super-admin/companies/:id
+router.patch('/companies/:id', async (req, res) => {
+    try {
+        const company = await companyService.updateCompany(req.params.id, req.body);
+        res.json(company);
+    }
+    catch (err) {
+        res.status(400).json({ error: err.message });
+    }
+});
+// PATCH /api/super-admin/companies/:id/toggle-status
+router.patch('/companies/:id/toggle-status', async (req, res) => {
+    try {
+        const company = await companyService.toggleCompanyStatus(req.params.id);
+        res.json(company);
+    }
+    catch (err) {
+        res.status(400).json({ error: err.message });
+    }
+});
+// ─── Company Users ──────────────────────────────────────────
+// GET /api/super-admin/companies/:id/users
+router.get('/companies/:id/users', async (req, res) => {
+    try {
+        const users = await userService.listUsers(req.params.id);
+        res.json(users);
+    }
+    catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+// POST /api/super-admin/companies/:id/users
+router.post('/companies/:id/users', async (req, res) => {
+    try {
+        const user = await userService.createUser(req.params.id, req.body);
+        res.status(201).json(user);
+    }
+    catch (err) {
+        res.status(400).json({ error: err.message });
+    }
+});
+// PATCH /api/super-admin/users/:userId
+router.patch('/users/:userId', async (req, res) => {
+    try {
+        const user = await userService.updateUser(req.params.userId, req.body);
+        res.json(user);
+    }
+    catch (err) {
+        res.status(400).json({ error: err.message });
+    }
+});
+// PATCH /api/super-admin/users/:userId/toggle-status
+router.patch('/users/:userId/toggle-status', async (req, res) => {
+    try {
+        const user = await userService.toggleUserStatus(req.params.userId);
+        res.json(user);
+    }
+    catch (err) {
+        res.status(400).json({ error: err.message });
+    }
+});
+// POST /api/super-admin/users/:userId/reset-password
+router.post('/users/:userId/reset-password', async (req, res) => {
+    try {
+        const { newPassword } = req.body;
+        if (!newPassword) {
+            res.status(400).json({ error: 'New password is required' });
+            return;
+        }
+        const result = await userService.resetUserPassword(req.params.userId, newPassword);
+        res.json(result);
+    }
+    catch (err) {
+        res.status(400).json({ error: err.message });
+    }
+});
+// ─── Subscription Plans ─────────────────────────────────────
+// GET /api/super-admin/plans
+router.get('/plans', async (_req, res) => {
+    try {
+        const plans = await subscriptionService.listPlans();
+        res.json(plans);
+    }
+    catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+// POST /api/super-admin/companies/:id/subscription
+router.post('/companies/:id/subscription', async (req, res) => {
+    try {
+        const { planId } = req.body;
+        if (!planId) {
+            res.status(400).json({ error: 'Plan ID is required' });
+            return;
+        }
+        const sub = await subscriptionService.assignPlan(req.params.id, planId);
+        res.json(sub);
+    }
+    catch (err) {
+        res.status(400).json({ error: err.message });
+    }
+});
+// ─── Dashboard Stats ────────────────────────────────────────
+// GET /api/super-admin/stats
+router.get('/stats', async (_req, res) => {
+    try {
+        const [companies, users, plans] = await Promise.all([
+            (await companyService.listCompanies()),
+            (await import('@prisma/client').then(m => new m.PrismaClient().user.count())),
+            (await subscriptionService.listPlans()),
+        ]);
+        res.json({
+            totalCompanies: companies.length,
+            activeCompanies: companies.filter(c => c.isActive).length,
+            totalUsers: users,
+            totalPlans: plans.length,
+        });
+    }
+    catch (err) {
+        res.status(500).json({ error: err.message });
+    }
+});
+// ─── GSTIN Validation ───────────────────────────────────────
+// POST /api/super-admin/validate-gstin
+router.post('/validate-gstin', (req, res) => {
+    try {
+        const { gstin } = req.body;
+        if (!gstin) {
+            res.status(400).json({ error: 'GSTIN is required' });
+            return;
+        }
+        const result = companyService.validateGSTIN(gstin);
+        res.json(result);
+    }
+    catch (err) {
+        res.status(400).json({ error: err.message });
+    }
+});
+export const superAdminRoutes = router;
+//# sourceMappingURL=superadmin.js.map
