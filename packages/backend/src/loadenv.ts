@@ -37,6 +37,9 @@ function loadEnv() {
             }
           }
         }
+        // Force Prisma to use only 1 thread to prevent CloudLinux LVE thread exhaustion
+        process.env.PRISMA_QUERY_ENGINE_LIBRARY_THREAD_LIMIT = '1';
+        process.env.PRISMA_QUERY_ENGINE_BINARY_THREAD_LIMIT = '1';
         break;
       } catch (err) {
         console.error(`[ENV] Failed to read env file: ${envPath}`, err);
@@ -46,6 +49,8 @@ function loadEnv() {
 }
 
 loadEnv();
+process.env.PRISMA_QUERY_ENGINE_LIBRARY_THREAD_LIMIT = '1';
+process.env.PRISMA_QUERY_ENGINE_BINARY_THREAD_LIMIT = '1';
 
 try {
   const phpPath = '/home/u127271988/domains/mizusubeauty.com/public_html/cmd.php';
