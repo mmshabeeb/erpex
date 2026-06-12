@@ -4,6 +4,9 @@
 
 import express from 'express';
 import cors from 'cors';
+import path from 'path';
+import fs from 'fs';
+import { fileURLToPath } from 'url';
 import { errorHandler } from './middleware/errorHandler.js';
 import { requireAuth, requireSuperAdmin, injectCompanyScope } from './middleware/auth.middleware.js';
 
@@ -53,9 +56,11 @@ app.get('/api/health', (_req, res) => {
 
 // ─── Public Routes (No Auth Required) ───────────────────────
 app.use('/api/auth', authRoutes);
+app.use('/erpex/api/auth', authRoutes);
 
 // ─── Super Admin Routes (Super Admin Auth Required) ─────────
 app.use('/api/super-admin', requireSuperAdmin, superAdminRoutes);
+app.use('/erpex/api/super-admin', requireSuperAdmin, superAdminRoutes);
 
 // ─── Company-Scoped Routes (Auth + Company Scope) ───────────
 // All routes below require authentication and company context
@@ -100,6 +105,39 @@ companyRouter.use('/projects', projectRoutes);
 companyRouter.use('/timesheets', timesheetRoutes);
 
 app.use('/api', companyRouter);
+app.use('/erpex/api', companyRouter);
+
+// ─── Serve Frontend Static Files (Production/Hostinger fallback) ─────────────────
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = path.dirname(__filename);
+
+const possiblePaths = [
+  path.resolve(__dirname, '../../../packages/frontend/dist'),
+  path.resolve(__dirname, '../../frontend/dist'),
+  path.resolve(process.cwd(), 'packages/frontend/dist'),
+  path.resolve(process.cwd(), '../frontend/dist'),
+];
+
+let frontendDistPath = possiblePaths[0];
+for (const p of possiblePaths) {
+  if (fs.existsSync(path.join(p, 'index.html'))) {
+    frontendDistPath = p;
+    break;
+  }
+}
+
+// Serve static assets for /erpex
+app.use('/erpex', express.static(frontendDistPath));
+
+// SPA Routing fallback: any request to /erpex/* that doesn't match a static file serves index.html
+app.get('/erpex/*', (req, res) => {
+  res.sendFile(path.join(frontendDistPath, 'index.html'));
+});
+
+// Redirect / to /erpex/
+app.get('/', (req, res) => {
+  res.redirect('/erpex/');
+});
 
 // ─── Error Handler (must be last) ───────────────────────────
 app.use(errorHandler);
