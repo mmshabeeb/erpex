@@ -87,18 +87,28 @@ export default function CompaniesPage() {
   useEffect(() => { loadData(); }, []);
 
   async function loadData() {
+    setError('');
     try {
       const [cRes, pRes] = await Promise.all([
         fetch(`${API}/super-admin/companies`, { headers: getAuthHeaders() }),
         fetch(`${API}/super-admin/plans`, { headers: getAuthHeaders() }),
       ]);
-      if (cRes.ok) setCompanies(await cRes.json());
-      if (pRes.ok) {
-        const p = await pRes.json();
-        setPlans(p);
-        if (p.length > 0 && !form.planId) setForm(f => ({ ...f, planId: p[0].id }));
+      if (!cRes.ok) {
+        const data = await cRes.json().catch(() => null);
+        throw new Error(data?.error || `Failed to load companies (${cRes.status})`);
       }
-    } catch {}
+      if (!pRes.ok) {
+        const data = await pRes.json().catch(() => null);
+        throw new Error(data?.error || `Failed to load plans (${pRes.status})`);
+      }
+
+      setCompanies(await cRes.json());
+      const p = await pRes.json();
+      setPlans(p);
+      if (p.length > 0 && !form.planId) setForm(f => ({ ...f, planId: p[0].id }));
+    } catch (err: any) {
+      setError(err.message || 'Unable to connect to the server');
+    }
     setLoading(false);
   }
 
@@ -532,6 +542,18 @@ export default function CompaniesPage() {
             onChange={e => setSearch(e.target.value)} />
         </div>
       </div>
+
+      {error && (
+        <div style={{
+          display: 'flex', alignItems: 'center', gap: 'var(--space-2)',
+          padding: 'var(--space-3) var(--space-4)', marginBottom: 'var(--space-4)',
+          background: 'var(--color-danger-bg)', color: 'var(--color-danger)',
+          borderRadius: 'var(--radius-md)', border: '1px solid rgba(239, 68, 68, 0.2)',
+          fontSize: 'var(--font-size-sm)',
+        }}>
+          <HiOutlineExclamationCircle /> {error}
+        </div>
+      )}
 
       {loading ? (
         <div className="loading-spinner"><div className="spinner" /></div>
