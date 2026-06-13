@@ -3,12 +3,15 @@
 // Separate layout for the ERPX Main Home portal
 // ============================================================
 
-import React from 'react';
+import React, { useState } from 'react';
 import { NavLink, Outlet } from 'react-router-dom';
 import { useAuth } from '../auth/AuthProvider';
+import { authApi } from '../../api/client';
+import toast from 'react-hot-toast';
 import {
   HiOutlineHome, HiOutlineOfficeBuilding,
   HiOutlineCreditCard, HiOutlineLogout, HiOutlineShieldCheck,
+  HiOutlineKey,
 } from 'react-icons/hi';
 
 const navItems = [
@@ -19,6 +22,27 @@ const navItems = [
 
 export default function SuperAdminLayout() {
   const { user, logout } = useAuth();
+  const [showPasswordModal, setShowPasswordModal] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [changingPassword, setChangingPassword] = useState(false);
+
+  async function handleChangePassword(e: React.FormEvent) {
+    e.preventDefault();
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      toast.error('New passwords do not match');
+      return;
+    }
+    setChangingPassword(true);
+    try {
+      await authApi.changePassword(passwordForm.currentPassword, passwordForm.newPassword);
+      toast.success('Password changed successfully');
+      setShowPasswordModal(false);
+      setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+    } catch (err: any) {
+      toast.error(err.message || 'Failed to change password');
+    }
+    setChangingPassword(false);
+  }
 
   return (
     <div className="app-layout">
@@ -87,6 +111,14 @@ export default function SuperAdminLayout() {
             </div>
           </div>
           <button
+            onClick={() => setShowPasswordModal(true)}
+            className="btn btn-ghost btn-icon"
+            title="Change Password"
+            style={{ flexShrink: 0 }}
+          >
+            <HiOutlineKey />
+          </button>
+          <button
             onClick={logout}
             className="btn btn-ghost btn-icon"
             title="Logout"
@@ -101,6 +133,46 @@ export default function SuperAdminLayout() {
       <main className="main-content">
         <Outlet />
       </main>
+
+      {/* Change Password Modal */}
+      {showPasswordModal && (
+        <div className="modal-overlay" onClick={() => setShowPasswordModal(false)}>
+          <div className="modal-content" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2 className="modal-title">Change Password</h2>
+              <button className="btn btn-ghost btn-icon" onClick={() => setShowPasswordModal(false)}>✕</button>
+            </div>
+            <form onSubmit={handleChangePassword}>
+              <div className="modal-body">
+                <div className="form-group">
+                  <label className="form-label">Current Password *</label>
+                  <input type="password" className="form-input" required
+                    value={passwordForm.currentPassword}
+                    onChange={e => setPasswordForm(f => ({ ...f, currentPassword: e.target.value }))} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">New Password *</label>
+                  <input type="password" className="form-input" required minLength={8}
+                    value={passwordForm.newPassword}
+                    onChange={e => setPasswordForm(f => ({ ...f, newPassword: e.target.value }))} />
+                </div>
+                <div className="form-group">
+                  <label className="form-label">Confirm New Password *</label>
+                  <input type="password" className="form-input" required minLength={8}
+                    value={passwordForm.confirmPassword}
+                    onChange={e => setPasswordForm(f => ({ ...f, confirmPassword: e.target.value }))} />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-secondary" onClick={() => setShowPasswordModal(false)}>Cancel</button>
+                <button type="submit" className="btn btn-primary" disabled={changingPassword}>
+                  {changingPassword ? 'Saving...' : 'Change Password'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

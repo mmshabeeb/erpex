@@ -293,8 +293,8 @@ export default function LoginPage() {
               )}
             </button>
 
-            {/* Demo Credentials */}
-            {loginType === 'super_admin' && (
+            {/* Demo Credentials (dev only) */}
+            {loginType === 'super_admin' && !import.meta.env.PROD && (
               <div style={{
                 display: 'flex', alignItems: 'flex-start', gap: 'var(--space-2)',
                 padding: 'var(--space-3) var(--space-4)',

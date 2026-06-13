@@ -263,3 +263,13 @@ export const timesheetsApi = {
   approve: (id: string) => request<any>(`/timesheets/${id}/approve`, { method: 'PATCH' }),
   reject: (id: string) => request<any>(`/timesheets/${id}/reject`, { method: 'PATCH' }),
 };
+
+// ─── Auth ───────────────────────────────────────────────────
+
+export const authApi = {
+  changePassword: (currentPassword: string, newPassword: string) =>
+    request<{ message: string }>('/auth/change-password', {
+      method: 'POST',
+      body: JSON.stringify({ currentPassword, newPassword }),
+    }),
+};

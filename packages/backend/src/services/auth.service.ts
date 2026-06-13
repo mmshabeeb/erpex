@@ -210,6 +210,19 @@ async function changeUserPassword(userId: string, currentPassword: string, newPa
   return { message: 'Password changed successfully' };
 }
 
+async function changeSuperAdminPassword(adminId: string, currentPassword: string, newPassword: string) {
+  const admin = await prisma.superAdmin.findUnique({ where: { id: adminId } });
+  if (!admin) throw new Error('Super admin not found');
+
+  const valid = await bcrypt.compare(currentPassword, admin.passwordHash);
+  if (!valid) throw new Error('Current password is incorrect');
+
+  const passwordHash = await bcrypt.hash(newPassword, 12);
+  await prisma.superAdmin.update({ where: { id: adminId }, data: { passwordHash } });
+
+  return { message: 'Password changed successfully' };
+}
+
 // ─── Get Current User Profile ───────────────────────────────
 
 async function getProfile(userId: string) {
@@ -297,6 +310,7 @@ export const authService = {
   companyUserLogin,
   refreshAccessToken,
   changeUserPassword,
+  changeSuperAdminPassword,
   getProfile,
   verifyToken,
   impersonateCompany,

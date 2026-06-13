@@ -81,7 +81,9 @@ router.post('/change-password', requireAuth, async (req: Request, res: Response)
       res.status(400).json({ error: 'Current and new passwords are required' });
       return;
     }
-    const result = await authService.changeUserPassword(req.auth!.id, currentPassword, newPassword);
+    const result = req.auth!.type === 'super_admin'
+      ? await authService.changeSuperAdminPassword(req.auth!.id, currentPassword, newPassword)
+      : await authService.changeUserPassword(req.auth!.id, currentPassword, newPassword);
     res.json(result);
   } catch (err: any) {
     res.status(400).json({ error: err.message });
