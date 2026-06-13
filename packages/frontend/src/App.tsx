@@ -2,7 +2,7 @@
 // ERPEX — App Component with Auth + Super Admin + ERP Routing
 // ============================================================
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Routes, Route, NavLink, useLocation, Navigate } from 'react-router-dom';
 import {
   HiOutlineHome, HiOutlineCollection, HiOutlineBookOpen,
@@ -13,7 +13,8 @@ import {
   HiOutlineCube, HiOutlineClipboardCheck, HiOutlineDocumentText,
   HiOutlineShoppingCart, HiOutlineTruck,
   HiOutlineBriefcase, HiOutlineReply,
-  HiOutlineChevronDown, HiOutlineChevronRight,
+  HiOutlineChevronDown,
+  HiOutlineChevronDoubleLeft, HiOutlineChevronDoubleRight,
   HiOutlineLogout,
 } from 'react-icons/hi';
 
@@ -145,36 +146,57 @@ const navSections: NavSection[] = [
   },
 ];
 
-function SidebarSection({ section }: { section: NavSection }) {
-  const [collapsed, setCollapsed] = useState(false);
+const SIDEBAR_COLLAPSE_KEY = 'erpex:sidebar-collapsed';
+
+function SidebarNavLink({ item, collapsed }: { item: NavItem; collapsed: boolean }) {
+  const [tooltipTop, setTooltipTop] = useState<number | null>(null);
+
+  return (
+    <NavLink
+      to={item.path}
+      end={item.path === '/'}
+      className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}
+      onMouseEnter={e => {
+        if (collapsed) {
+          const rect = e.currentTarget.getBoundingClientRect();
+          setTooltipTop(rect.top + rect.height / 2);
+        }
+      }}
+      onMouseLeave={() => setTooltipTop(null)}
+    >
+      <span className="sidebar-icon">{item.icon}</span>
+      {!collapsed && <span className="sidebar-label">{item.label}</span>}
+      {collapsed && tooltipTop !== null && (
+        <span className="sidebar-tooltip" style={{ top: tooltipTop }}>{item.label}</span>
+      )}
+    </NavLink>
+  );
+}
+
+function SidebarSection({ section, sidebarCollapsed }: { section: NavSection; sidebarCollapsed: boolean }) {
+  const [sectionCollapsed, setSectionCollapsed] = useState(false);
   const location = useLocation();
   const isActiveSection = section.items.some(i => location.pathname === i.path || location.pathname.startsWith(i.path + '/'));
+  const showItems = sidebarCollapsed || !section.collapsible || !sectionCollapsed || isActiveSection;
 
   return (
     <div className="sidebar-section">
-      <div
-        className="sidebar-section-title"
-        style={{ cursor: section.collapsible ? 'pointer' : 'default', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}
-        onClick={() => section.collapsible && setCollapsed(!collapsed)}
-      >
-        <span>{section.title}</span>
-        {section.collapsible && (
-          <span style={{ fontSize: '0.65rem', opacity: 0.5 }}>
-            {collapsed ? <HiOutlineChevronRight /> : <HiOutlineChevronDown />}
-          </span>
-        )}
-      </div>
-      {(!section.collapsible || !collapsed || isActiveSection) && section.items.map((item) => (
-        <NavLink
-          key={item.path}
-          to={item.path}
-          end={item.path === '/'}
-          className={({ isActive }) => `sidebar-link${isActive ? ' active' : ''}`}
+      {!sidebarCollapsed && (
+        <div
+          className={`sidebar-section-title${section.collapsible ? ' collapsible' : ''}`}
+          onClick={() => section.collapsible && setSectionCollapsed(c => !c)}
         >
-          <span className="sidebar-icon">{item.icon}</span>
-          <span>{item.label}</span>
-        </NavLink>
-      ))}
+          <span>{section.title}</span>
+          {section.collapsible && (
+            <HiOutlineChevronDown className={`sidebar-section-chevron${sectionCollapsed ? ' collapsed' : ''}`} />
+          )}
+        </div>
+      )}
+      <div className={`sidebar-section-items${showItems ? '' : ' collapsed'}`}>
+        {section.items.map((item) => (
+          <SidebarNavLink key={item.path} item={item} collapsed={sidebarCollapsed} />
+        ))}
+      </div>
     </div>
   );
 }
@@ -184,89 +206,83 @@ function SidebarSection({ section }: { section: NavSection }) {
 function ERPLayout() {
   const location = useLocation();
   const { user, logout, isImpersonating, exitImpersonation } = useAuth();
+  const [sidebarCollapsed, setSidebarCollapsed] = useState<boolean>(() => {
+    try {
+      return localStorage.getItem(SIDEBAR_COLLAPSE_KEY) === 'true';
+    } catch {
+      return false;
+    }
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(SIDEBAR_COLLAPSE_KEY, String(sidebarCollapsed));
+    } catch {
+      // ignore (e.g. storage disabled)
+    }
+  }, [sidebarCollapsed]);
 
   return (
-    <div className="app-layout">
+    <div className={`app-layout${sidebarCollapsed ? ' sidebar-collapsed' : ''}`}>
       <aside className="sidebar" id="main-sidebar">
+        <button
+          className="sidebar-collapse-toggle"
+          onClick={() => setSidebarCollapsed(c => !c)}
+          title={sidebarCollapsed ? 'Expand sidebar' : 'Collapse sidebar'}
+        >
+          {sidebarCollapsed ? <HiOutlineChevronDoubleRight /> : <HiOutlineChevronDoubleLeft />}
+        </button>
+
         <div className="sidebar-brand">
           <div className="sidebar-brand-logo">E</div>
-          <div className="sidebar-brand-text">
-            <span className="sidebar-brand-name">ERPEX</span>
-            <span className="sidebar-brand-sub">
-              {user?.company?.name || 'Business Suite'}
-            </span>
-          </div>
+          {!sidebarCollapsed && (
+            <div className="sidebar-brand-text">
+              <span className="sidebar-brand-name">ERPEX</span>
+              <span className="sidebar-brand-sub">
+                {user?.company?.name || 'Business Suite'}
+              </span>
+            </div>
+          )}
         </div>
         <nav className="sidebar-nav">
           {navSections.map((section) => (
-            <SidebarSection key={section.title} section={section} />
+            <SidebarSection key={section.title} section={section} sidebarCollapsed={sidebarCollapsed} />
           ))}
         </nav>
 
         {isImpersonating && (
-          <div style={{
-            padding: 'var(--space-3) var(--space-4)',
-            background: 'rgba(245, 158, 11, 0.1)',
-            borderTop: '1px solid rgba(245, 158, 11, 0.2)',
-            display: 'flex',
-            flexDirection: 'column',
-            gap: 'var(--space-2)'
-          }}>
-            <div style={{ fontSize: 'var(--font-size-xs)', color: '#f59e0b', fontWeight: 600 }}>
-              🕵️ Impersonated Session
-            </div>
+          <div className={`sidebar-impersonation${sidebarCollapsed ? ' collapsed' : ''}`}>
+            {!sidebarCollapsed && (
+              <div style={{ fontSize: 'var(--font-size-xs)', color: '#f59e0b', fontWeight: 600 }}>
+                🕵️ Impersonated Session
+              </div>
+            )}
             <button
               onClick={exitImpersonation}
-              className="btn"
-              style={{
-                width: '100%',
-                display: 'flex',
-                alignItems: 'center',
-                justifyContent: 'center',
-                gap: '6px',
-                fontSize: 'var(--font-size-xs)',
-                padding: '6px 12px',
-                background: '#f59e0b',
-                border: '1px solid #f59e0b',
-                color: 'white',
-                cursor: 'pointer',
-                borderRadius: 'var(--border-radius-sm)',
-                fontWeight: 600,
-              }}
+              className="btn sidebar-impersonation-btn"
+              title="Back to Super Admin"
             >
               <HiOutlineReply />
-              Back to Super Admin
+              {!sidebarCollapsed && 'Back to Super Admin'}
             </button>
           </div>
         )}
 
         {/* User profile at bottom */}
-        <div style={{
-          padding: 'var(--space-4)',
-          borderTop: '1px solid var(--color-border)',
-          display: 'flex', alignItems: 'center', gap: 'var(--space-3)',
-        }}>
-          <div style={{
-            width: 32, height: 32,
-            background: 'var(--color-accent-gradient)',
-            borderRadius: 'var(--radius-full)',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            fontSize: 'var(--font-size-xs)', fontWeight: 700, color: 'white', flexShrink: 0,
-          }}>
+        <div className={`sidebar-profile${sidebarCollapsed ? ' collapsed' : ''}`}>
+          <div className="sidebar-avatar" title={sidebarCollapsed ? (user?.name || 'User') : undefined}>
             {user?.name?.charAt(0)?.toUpperCase() || 'U'}
           </div>
-          <div style={{ flex: 1, minWidth: 0 }}>
-            <div style={{
-              fontSize: 'var(--font-size-sm)', fontWeight: 600,
-              color: 'var(--color-text-primary)', whiteSpace: 'nowrap',
-              overflow: 'hidden', textOverflow: 'ellipsis',
-            }}>
-              {user?.name || 'User'}
+          {!sidebarCollapsed && (
+            <div style={{ flex: 1, minWidth: 0 }}>
+              <div className="sidebar-profile-name">
+                {user?.name || 'User'}
+              </div>
+              <div className="sidebar-profile-role">
+                {user?.role || 'user'}
+              </div>
             </div>
-            <div style={{ fontSize: 'var(--font-size-xs)', color: 'var(--color-text-muted)' }}>
-              {user?.role || 'user'}
-            </div>
-          </div>
+          )}
           <button onClick={logout} className="btn btn-ghost btn-icon" title="Logout" style={{ flexShrink: 0 }}>
             <HiOutlineLogout />
           </button>
