@@ -1,16 +1,22 @@
 #!/bin/bash
 # ============================================================
-# ERPEX — VPS Deployment Script
-# Runs on the Hostinger VPS after rsync
+# ERPEX — Hostinger Deployment Script
+# Runs on the Hostinger Node.js app directory after rsync
 # ============================================================
 
 set -e
 
-APP_DIR="/var/www/erpex"
-DB_DIR="/var/www/erpex-data"
-cd "$APP_DIR"
+DB_DIR="${DB_DIR:-$HOME/domains/mizusubeauty.com/db}"
+APP_DIR="$(pwd)"
 
 echo "🚀 ERPEX Deployment starting..."
+
+# ─── Activate Hostinger's Node.js virtual environment ────────
+# Adjust this path if it doesn't match hPanel's "Enter virtual environment" command
+NODEVENV="$HOME/nodevenv/domains/mizusubeauty.com/nodejs/${NODE_VERSION:-20}/bin/activate"
+if [ -f "$NODEVENV" ]; then
+  source "$NODEVENV"
+fi
 
 # ─── Create persistent DB directory ─────────────────────────
 mkdir -p "$DB_DIR"
@@ -39,51 +45,19 @@ cd "$APP_DIR/packages/backend"
 npx prisma generate
 
 echo "🗄️  Setting up database..."
-# Source the .env so DATABASE_URL is available
 export $(grep -v '^#' .env | xargs)
 npx prisma db push --accept-data-loss 2>/dev/null || true
 
-# ─── Start/Restart with PM2 ─────────────────────────────────
-echo "🔄 Restarting application with PM2..."
+# ─── Restart the app via Passenger ───────────────────────────
+echo "🔄 Restarting application..."
 cd "$APP_DIR"
-mkdir -p logs
-
-# Install PM2 globally if not present
-if ! command -v pm2 &> /dev/null; then
-  echo "📥 Installing PM2..."
-  npm install -g pm2
-fi
-
-# Stop existing app if running
-pm2 stop erpex-api 2>/dev/null || true
-pm2 delete erpex-api 2>/dev/null || true
-
-# Start with ecosystem config
-pm2 start ecosystem.config.cjs
-
-# Save PM2 process list (survives reboot)
-pm2 save
-
-# Setup PM2 startup script (first time only)
-pm2 startup 2>/dev/null || true
-
-# ─── Setup Nginx (first time only) ──────────────────────────
-NGINX_CONF="/etc/nginx/sites-available/erpex"
-if [ ! -f "$NGINX_CONF" ]; then
-  echo "🌐 Setting up Nginx configuration..."
-  sudo cp "$APP_DIR/nginx-erpex.conf" "$NGINX_CONF" 2>/dev/null || true
-  sudo ln -sf "$NGINX_CONF" /etc/nginx/sites-enabled/erpex 2>/dev/null || true
-  sudo nginx -t 2>/dev/null && sudo systemctl reload nginx 2>/dev/null || true
-  echo "⚠️  Review Nginx config at $NGINX_CONF and reload: sudo systemctl reload nginx"
-else
-  echo "🌐 Nginx config already exists. Reloading..."
-  sudo nginx -t 2>/dev/null && sudo systemctl reload nginx 2>/dev/null || true
-fi
+mkdir -p tmp
+touch tmp/restart.txt
+touch packages/backend/dist/index.js
 
 echo ""
 echo "✅ ERPEX deployed successfully!"
-echo "   API:      http://localhost:3001/api/health"
-echo "   Frontend: /var/www/erpex/erpex/"
+echo "   Frontend: https://mizusubeauty.com/erpex/"
+echo "   API:      https://mizusubeauty.com/erpex/api/health"
 echo "   DB:       $DB_DIR/erpex.db"
-echo "   Logs:     pm2 logs erpex-api"
 echo ""
